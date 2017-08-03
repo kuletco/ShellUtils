@@ -12,13 +12,8 @@ C_FL="${C_RED}FAILED${C_CLR}"
 C_WARN="${C_YEL}WARNNING${C_CLR}"
 C_ERROR="${C_RED}ERROR${C_CLR}"
 
-# USAGE: GetScriptDir
-GetScriptDir()
-{
-	local ScriptDir="$(cd "$(dirname "$0")" && pwd)"
-
-	echo ${ScriptDir}
-}
+Script=$0
+ScriptDir="$(cd "$(dirname "$0")" && pwd)"
 
 # USAGE: ConfGetSections <ConfFile>
 ConfGetSections()
@@ -1213,14 +1208,14 @@ ShowSettings()
 Usage()
 {
 	cat <<EOF
-$(basename $0) <Command> <Command> ... (Command Sequence)
+$(basename ${Script}) <Command> <Command> ... (Command Sequence)
 Commands:
   -a|a|auto        : Auto process all by step.
   -c|c|create      : Create a virtual disk file.
   -i|i|init        : Initialize the virtual disk file, if file does not exist, create it.
-  -m|m|mount       : Mount virtual disk to '$(basename ${ROOT})'.
-  -u|u|umount      : Unmount virtual disk from '$(basename ${ROOT})'.
-  -U|U|unpack      : Unpack the base filesystem(default is '$(basename ${ROOTFS_PKG})') to '$(basename ${ROOT})'.
+  -m|m|mount       : Mount virtual disk to '$(basename ${RootDir})'.
+  -u|u|umount      : Unmount virtual disk from '$(basename ${RootDir})'.
+  -U|U|unpack      : Unpack the base filesystem(default is '$(basename ${RootfsPackage})') to '$(basename ${RootDir})'.
   -P|P|pre-process : Pre-Process unpacked filesystem, include replace files, gen-locales, ie....
   -I|I|install     : Install extra packages.
   -S|S|setup       : Setup settings, include setup bootloader, user password, ie....
