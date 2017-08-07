@@ -101,6 +101,40 @@ CheckPrivilege()
     fi
 }
 
+# Usage: GetDiskType <Disk>
+GetDiskType()
+{
+    [ $# -eq 1 ] || (echo -e "Usage: GetDiskType <Disk>" && return 1)
+
+    local Disk=$1
+    [ -e ${Disk} ] || return 1
+
+    local DiskType=$(lsblk -n -o TYPE -d ${Disk})
+    [ $? -eq 0 ] || return 1
+
+    echo ${DiskType}
+
+    return 0
+}
+
+# Usage: IsVirtualDisk <Disk>
+IsVirtualDisk()
+{
+    [ $# -eq 1 ] || (echo -e "Usage: IsVirtualDisk <Disk>" && return 1)
+
+    local Disk=$1
+    [ -e ${Disk} ] || return 1
+
+    local DiskType=$(GetDiskType ${Disk})
+    [ $? -eq 0 ] || return 1
+
+    if [ x"${DiskType}" = x"disk" ]; then
+        return 1
+    else
+        return 0
+    fi
+}
+
 # Usage: GetPartitionInfo <Info> <Device>
 GetPartitionInfo()
 {
