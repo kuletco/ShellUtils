@@ -15,6 +15,26 @@ C_ERROR="${C_RED}ERROR${C_CLR}"
 Script=$0
 ScriptDir="$(cd "$(dirname "$0")" && pwd)"
 
+CheckBuildEnvironment()
+{
+    Utils="blkid lsblk kpartx parted mkfs.ext4 mkfs.fat"
+    echo "Checking Build Environment..."
+
+    for Util in ${Utils}
+    do
+        printf " ${C_YEL}${Util}${C_CLR} is "
+        if ! which ${Util} >/dev/null 2>&1; then
+            printf "[${C_FL}]\n"
+            echo "Please install ${Unit} first"
+            return 1
+        else
+            printf "[${C_OK}]\n"
+        fi
+    done
+
+    return 0
+}
+
 # USAGE: ConfGetSections <ConfFile>
 ConfGetSections()
 {
@@ -183,15 +203,10 @@ MapVirtualDisk()
 
     local LoopDevice=$(GetVirtualDiskMappedDevice ${VirtualDisk})
     if [ -n "${LoopDevice}" ]; then
-        echo -e "MAPPED: ${C_HL}${VirtualDisk}${C_CLR} --> ${C_YEL}${LoopDevice}${C_CLR}"
+        echo -e " ${C_HL}${VirtualDisk}${C_CLR} --> ${C_YEL}${LoopDevice}${C_CLR}"
         return 0
-    else
-        echo -e "MAPPED: ${C_HL}${VirtualDisk}${C_CLR} [${C_FL}]"
-        return 1
     fi
 }
-
-
 
 # Usage: CreateVirtualDisk <VirtualDisk>
 CreateVirtualDisk()
@@ -1221,6 +1236,9 @@ Commands:
   -S|S|setup       : Setup settings, include setup bootloader, user password, ie....
 EOF
 }
+
+CheckPrivilege || exit $?
+CheckBuildEnvironment || exit $?
 
 #ShowSettings
 
