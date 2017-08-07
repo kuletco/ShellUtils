@@ -1340,6 +1340,7 @@ do
         -c|c|create)
             shift
             CreateVirtualDisk ${VDisk} || exit $?
+            CreatePartitions ${VDisk} || exit $?
             ;;
         -i|i|init)
             shift
