@@ -218,11 +218,26 @@ CreateVirtualDisk()
 
     dd if=/dev/zero of=${VirtualDisk} bs=4M count=0 seek=1024 status=none || return 1
 
-    parted -s ${VirtualDisk} mklabel gpt                    || return 1
-    parted -s ${VirtualDisk} mkpart ESP fat32 1M 100M       || return 1
-    parted -s ${VirtualDisk} set 1 boot on                  || return 1
-    parted -s ${VirtualDisk} mkpart ROOT ext4 100M 70%      || return 1
-    parted -s ${VirtualDisk} mkpart USERDATA ext4 70% 100%  || return 1
+    return 0
+}
+
+# Usage: CreatePartitions <Disk>
+CreatePartitions()
+{
+    [ $# -eq 1 ] || (echo -e "Usage: CreatePartitions <VirtualDisk>" && return 1)
+
+    local Disk=$1
+    [ -e ${Disk} ] || (echo -e "Disk file ${Disk} not exists!" && return 1)
+
+    parted -s ${Disk} mklabel gpt                     || return 1
+    parted -s ${Disk} mkpart STBINFO ext4 1M 100M     || return 1
+    parted -s ${Disk} mkpart ESP fat32 100M 200M      || return 1
+    parted -s ${Disk} mkpart RECOVERY ext4 200M 800M  || return 1
+    parted -s ${Disk} mkpart ROOT ext4 800M 3000M     || return 1
+    parted -s ${Disk} mkpart SYSCONF ext4 3000M 3100M || return 1
+    parted -s ${Disk} mkpart USERDATA ext4 3100M 100% || return 1
+    parted -s ${Disk} set 2 boot on                   || return 1
+    parted -s ${Disk} set 2 esp on                    || return 1
 
     return 0
 }
@@ -269,7 +284,7 @@ FormatPartitions()
                     fstype="vfat"
                     opts="-a"
                     ;;
-                ROOT|USERDATA)
+                STBINFO|RECOVERY|ROOT|CONFIG|SYSCONF|DATA|USERDATA)
                     fstype="ext4"
                     opts="-q -F"
                     ;;
@@ -650,8 +665,11 @@ MountVirtualDisk()
     local VirtualDisk=$1
     local RootDir=$2
     local CacheDir=$3
+    local StbInfoDir=${RootDir}/etc/stbinfo
     local UefiDir=${RootDir}/boot/efi
-    local UserDir=${RootDir}/userdata
+    local RecoveryDir=${RootDir}/boot/recovery
+    local SysConfDir=${RootDir}/etc/sysconf
+    local UserDataDir=${RootDir}/data
 
     # Check and map virtual disk
     if ! IsVirtualDiskMapped ${VirtualDisk}; then
@@ -682,18 +700,36 @@ MountVirtualDisk()
         local PartLabel=$(GetPartitionInfo Label $(realpath -L ${dev}))
         [ -n "${PartLabel}" ] || return 1
         case ${PartLabel} in
+            STBINFO)
+                mkdir -p ${StbInfoDir} || return 1
+                Mount ${dev} ${StbInfoDir} || return 1
+            ;;
             ESP)
                 mkdir -p ${UefiDir} || return 1
                 Mount ${dev} ${UefiDir} || return 1
             ;;
+            RECOVERY)
+                mkdir -p ${RecoveryDir} || return 1
+                Mount ${dev} ${RecoveryDir} || return 1
+            ;;
+            SYSCONF)
+                mkdir -p ${SysConfDir} || return 1
+                Mount ${dev} ${SysConfDir} || return 1
+            ;;
             USERDATA)
-                mkdir -p ${UserDir} || return 1
-                Mount ${dev} ${UserDir} || return 1
+                mkdir -p ${UserDataDir} || return 1
+                Mount ${dev} ${UserDataDir} || return 1
             ;;
             *)
             ;;
         esac
     done
+
+    local SysLogDir=${RootDir}/var/log
+    local SysLogSaveDir=${UserDataDir}/var/log
+
+    mkdir -p ${SysLogDir} ${SysLogSaveDir}
+    Mount --bind ${SysLogSaveDir} ${SysLogDir} || return 1
 
     MountCache ${RootDir} ${CacheDir} || return ?
     MountSystemEntries ${RootDir} || return $?
@@ -774,6 +810,7 @@ InitializeVirtualDisk()
     if [ ! -e ${VirtualDisk} ]; then
         echo -e "Cannot find VirtualDisk file ${C_HL}${VirtualDisk}${C_CLR}, create it."
         CreateVirtualDisk ${VirtualDisk} || return 1
+        CreatePartitions ${VirtualDisk} || return 1
     fi
 
     # Unmount VirtualDisk
@@ -950,8 +987,11 @@ GenerateFSTAB()
     local Partitions=$(GetVirtualDiskMappedParts ${VirtualDisk})
     [ -n "${Partitions}" ] || return 1
 
+    local StbiUUID=
     local UefiUUID=
+    local RecoUUID=
     local RootUUID=
+    local ConfUUID=
     local UserUUID=
 
     for dev in ${Partitions}
@@ -959,13 +999,25 @@ GenerateFSTAB()
         local PartLabel=$(GetPartitionInfo Label $(realpath -L ${dev}))
         [ -n "${PartLabel}" ] || return 1
         case ${PartLabel} in
+            STBINFO)
+                StbiUUID=$(GetPartitionInfo UUID $(realpath -L ${dev}))
+                [ -n "${StbiUUID}" ] || return 1
+            ;;
             ESP)
                 UefiUUID=$(GetPartitionInfo UUID $(realpath -L ${dev}))
                 [ -n "${UefiUUID}" ] || return 1
             ;;
+            RECOVERY)
+                RecoUUID=$(GetPartitionInfo UUID $(realpath -L ${dev}))
+                [ -n "${RecoUUID}" ] || return 1
+            ;;
             ROOT)
                 RootUUID=$(GetPartitionInfo UUID $(realpath -L ${dev}))
                 [ -n "${RootUUID}" ] || return 1
+            ;;
+            SYSCONF|CONFIG)
+                ConfUUID=$(GetPartitionInfo UUID $(realpath -L ${dev}))
+                [ -n "${ConfUUID}" ] || return 1
             ;;
             USERDATA)
                 UserUUID=$(GetPartitionInfo UUID $(realpath -L ${dev}))
@@ -980,14 +1032,17 @@ GenerateFSTAB()
     mkdir -p ${RootDir}/etc
     cat > ${RootDir}/etc/fstab <<EOF
 # System Entry
-UUID=${RootUUID} /         ext4 errors=remount-ro 0 1
-UUID=${UefiUUID} /boot/efi vfat umask=0077        0 1
-UUID=${UserUUID} /userdata ext4 defaults          0 2
+UUID=${RootUUID} /               ext4  noatime,nodiratime,errors=remount-ro  0 1
+UUID=${UefiUUID} /boot/efi       vfat  umask=0077                            0 1
+UUID=${RecoUUID} /boot/recovery  ext4  ro,noatime,nodiratime                 0 1
+UUID=${StbiUUID} /etc/stbinfo    ext4  ro,noatime,nodiratime                 0 1
+UUID=${ConfUUID} /etc/sysconf    ext4  noatime,nodiratime                    0 2
+UUID=${UserUUID} /data           ext4  noatime,nodiratime                    0 2
 
 # User Data Entry
-/userdata/home        /home     none rw,bind           0 0
-/userdata/root        /root     none rw,bind           0 0
-/userdata/var/log     /var/log  none rw,bind           0 0
+/data/home       /home           none  rw,bind                               0 0
+/data/root       /root           none  rw,bind                               0 0
+/data/var/log    /var/log        none  rw,bind                               0 0
 EOF
     if [ $? -ne 0 ]; then
         printf " [${C_FL}]\n"
@@ -995,8 +1050,11 @@ EOF
     fi
     printf " [${C_OK}]\n"
 
+    echo -e "  ${C_YEL}STBINFO${C_CLR}  UUID = ${C_BLU}${StbiUUID}${C_CLR}"
     echo -e "  ${C_YEL}ESP${C_CLR}      UUID = ${C_BLU}${UefiUUID}${C_CLR}"
+    echo -e "  ${C_YEL}RECOVERY${C_CLR} UUID = ${C_BLU}${RecoUUID}${C_CLR}"
     echo -e "  ${C_YEL}ROOT${C_CLR}     UUID = ${C_BLU}${RootUUID}${C_CLR}"
+    echo -e "  ${C_YEL}SYSCONF${C_CLR}  UUID = ${C_BLU}${ConfUUID}${C_CLR}"
     echo -e "  ${C_YEL}USERDATA${C_CLR} UUID = ${C_BLU}${UserUUID}${C_CLR}"
 
     return 0
