@@ -1372,6 +1372,7 @@ do
             SetupBootloader ${VDisk} ${RootDir} ${BootloaderID} || exit $?
             ;;
         -a|a|auto)
+            shift
             InitializeVirtualDisk ${VDisk} ${RootDir} || exit $?
             MountVirtualDisk ${VDisk} ${RootDir} ${CacheDir}
             RST=$?
