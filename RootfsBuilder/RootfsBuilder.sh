@@ -18,17 +18,12 @@ ScriptDir="$(cd "$(dirname "$0")" && pwd)"
 CheckBuildEnvironment()
 {
     Utils="blkid lsblk kpartx parted mkfs.ext4 mkfs.fat"
-    echo "Checking Build Environment..."
 
     for Util in ${Utils}
     do
-        printf " ${C_YEL}${Util}${C_CLR} is "
         if ! which ${Util} >/dev/null 2>&1; then
-            printf "[${C_FL}]\n"
-            echo "Please install ${Unit} first"
+            echo "Please install [${C_RED}${Unit}${C_CLR}] first"
             return 1
-        else
-            printf "[${C_OK}]\n"
         fi
     done
 
@@ -663,7 +658,7 @@ MountUserEntries()
     [ $# -eq 1 ] || (echo -e "Usage: MountUserEntries <RootDir>" && return 1)
 
     local RootDir=$1
-    local UserDir=${RootDir}/userdata
+    local UserDir=${RootDir}/data
     [ -n "${RootDir}" ] || return 1
 
     for dir in home root var/log
@@ -818,7 +813,8 @@ UnMapVirtualDisk()
         local LoopDevice=$(GetVirtualDiskMappedDevice ${VirtualDisk})
         if [ -n "${LoopDevice}" ]; then
             printf "UMAPPING: ${C_HL}${VirtualDisk}${C_CLR} <--> ${C_YEL}${LoopDevice}${C_CLR} ..."
-            if kpartx -d ${VirtualDisk} >/dev/null 2>&1; then
+            kpartx -d ${VirtualDisk} >/dev/null 2>&1
+            if ! IsVirtualDiskMapped ${VirtualDisk}; then
                 printf " [${C_OK}]\n"
                 return 0
             else
