@@ -15,6 +15,16 @@ C_ERROR="${C_RED}ERROR${C_CLR}"
 Script=$0
 ScriptDir="$(cd "$(dirname "$0")" && pwd)"
 
+CheckPrivilege()
+{
+    if [ $UID -ne 0 ]; then
+        echo -e  "Please run this script with \033[1m\033[31mroot\033[0m privileges."
+        return 1
+    else
+        return 0
+    fi
+}
+
 CheckBuildEnvironment()
 {
     Utils="blkid lsblk kpartx parted mkfs.ext4 mkfs.fat"
@@ -86,16 +96,6 @@ ConfSetValue()
     sed -i "/^\[${Section}\]/,/^\[/ {/^\[${Section}\]/b;/^\[/b;s/^${Key}*=.*/${Key}=${Value}/g;}" ${ConfFile}
 }
 
-CheckPrivilege()
-{
-    if [ $UID -ne 0 ]; then
-        echo -e  "Please run this script with \033[1m\033[31mroot\033[0m privileges."
-        return 1
-    else
-        return 0
-    fi
-}
-
 # Usage: GetDiskType <Disk>
 GetDiskType()
 {
@@ -160,10 +160,10 @@ GetPartitionInfo()
     echo ${PartInfo}
 }
 
-# Usage: IsVirtualDiskMapped <VirtualDisk>
-IsVirtualDiskMapped()
+# Usage: IsVirtualDiskLoaded <VirtualDisk>
+IsVirtualDiskLoaded()
 {
-    [ $# -eq 1 ] || (echo -e "Usage: IsVirtualDiskMapped <VirtualDisk>" && return 1)
+    [ $# -eq 1 ] || (echo -e "Usage: IsVirtualDiskLoaded <VirtualDisk>" && return 1)
 
     local VirtualDisk=$1
     [ -e ${VirtualDisk} ] || return 1
@@ -175,15 +175,15 @@ IsVirtualDiskMapped()
     fi
 }
 
-# Usage: GetVirtualDiskMappedDevice <VirtualDisk>
-GetVirtualDiskMappedDevice()
+# Usage: GetVirtualDiskLoadedDevice <VirtualDisk>
+GetVirtualDiskLoadedDevice()
 {
-    [ $# -eq 1 ] || (echo -e "Usage: GetVirtualDiskMappedDevice <VirtualDisk>" && return 1)
+    [ $# -eq 1 ] || (echo -e "Usage: GetVirtualDiskLoadedDevice <VirtualDisk>" && return 1)
 
     local VirtualDisk=$1
     [ -e ${VirtualDisk} ] || return 1
 
-    if IsVirtualDiskMapped ${VirtualDisk}; then
+    if IsVirtualDiskLoaded ${VirtualDisk}; then
         kpartx -l ${VirtualDisk} | head -1 | awk '{print $5}'
         [ $? -eq 0 ] || return 1
     else
@@ -191,10 +191,10 @@ GetVirtualDiskMappedDevice()
     fi
 }
 
-# Usage: GetVirtualDiskMappedParts <VirtualDisk>
-GetVirtualDiskMappedParts()
+# Usage: GetVirtualDiskLoadedPartitions <VirtualDisk>
+GetVirtualDiskLoadedPartitions()
 {
-    [ $# -eq 1 ] || (echo -e "Usage: GetVirtualDiskMappedParts <VirtualDisk>" && return 1)
+    [ $# -eq 1 ] || (echo -e "Usage: GetVirtualDiskLoadedPartitions <VirtualDisk>" && return 1)
 
     local VirtualDisk=$1
     [ -f ${VirtualDisk} ] || return 1
@@ -212,16 +212,16 @@ GetVirtualDiskMappedParts()
     echo -e ${Parts}
 }
 
-# Usage: MapVirtualDisk <VirtualDisk>
-MapVirtualDisk()
+# Usage: LoadVirtualDisk <VirtualDisk>
+LoadVirtualDisk()
 {
-    [ $# -eq 1 ] || (echo -e "Usage: MapVirtualDisk <VirtualDisk>" && return 1)
+    [ $# -eq 1 ] || (echo -e "Usage: LoadVirtualDisk <VirtualDisk>" && return 1)
 
     local VirtualDisk=$1
     [ -e ${VirtualDisk} ] || return 1
 
-    if ! IsVirtualDiskMapped ${VirtualDisk}; then
-        printf "MAPPING: ${C_HL}${VirtualDisk}${C_CLR}"
+    if ! IsVirtualDiskLoaded ${VirtualDisk}; then
+        printf "LOADING: ${C_HL}${VirtualDisk}${C_CLR}"
         if kpartx -as ${VirtualDisk}; then
             printf " [${C_OK}]\n"
         else
@@ -230,7 +230,7 @@ MapVirtualDisk()
         fi
     fi
 
-    local LoopDevice=$(GetVirtualDiskMappedDevice ${VirtualDisk})
+    local LoopDevice=$(GetVirtualDiskLoadedDevice ${VirtualDisk})
     if [ -n "${LoopDevice}" ]; then
         echo -e " ${C_HL}${VirtualDisk}${C_CLR} --> ${C_YEL}${LoopDevice}${C_CLR}"
         return 0
@@ -279,12 +279,12 @@ FormatPartitions()
     local VirtualDisk=$1
     [ -e ${VirtualDisk} ] || return 1
 
-    if ! IsVirtualDiskMapped ${VirtualDisk}; then
-        echo -e "VirtualDisk[${C_HL}${VirtualDisk}${C_CLR}] does not mapped."
+    if ! IsVirtualDiskLoaded ${VirtualDisk}; then
+        echo -e "VirtualDisk[${C_HL}${VirtualDisk}${C_CLR}] does not loaded."
         return 1
     fi
 
-    local Partitions=$(GetVirtualDiskMappedParts ${VirtualDisk})
+    local Partitions=$(GetVirtualDiskLoadedPartitions ${VirtualDisk})
     [ -n "${Partitions}" ] || return 1
 
     for Partition in ${Partitions}
@@ -372,9 +372,9 @@ IsVirtualDiskMounted()
     local VirtualDisk=$1
     [ -e ${VirtualDisk} ] || return 1
 
-    IsVirtualDiskMapped ${VirtualDisk} || return 1
+    IsVirtualDiskLoaded ${VirtualDisk} || return 1
 
-    local loopdev=$(GetVirtualDiskMappedDevice ${VirtualDisk})
+    local loopdev=$(GetVirtualDiskLoadedDevice ${VirtualDisk})
     [ -n "${loopdev}" ] || return 1
 
     if mount | /bin/grep -q "$(basename ${loopdev}p)"; then
@@ -391,13 +391,13 @@ ShowVirtualDiskMountedInfo()
     local VirtualDisk=$1
     [ -e ${VirtualDisk} ] || return 1
 
-    IsVirtualDiskMapped ${VirtualDisk} || return 0
+    IsVirtualDiskLoaded ${VirtualDisk} || return 0
     IsVirtualDiskMounted ${VirtualDisk} || return 0
 
-    local loopdev=$(GetVirtualDiskMappedDevice ${VirtualDisk})
+    local loopdev=$(GetVirtualDiskLoadedDevice ${VirtualDisk})
     [ -n "${loopdev}" ] || return 1
 
-    echo -e "MAPPED: ${C_HL}${VirtualDisk}${C_CLR} ${C_YEL}${loopdev}${C_CLR}"
+    echo -e "LOADED: ${C_HL}${VirtualDisk}${C_CLR} ${C_YEL}${loopdev}${C_CLR}"
     mount | /bin/grep "$(basename ${loopdev}p)" | while read line
     do
         local mdev=$(echo ${line} | awk '{print $1}')
@@ -414,7 +414,7 @@ GetVirtualDiskMountedParts()
     local VirtualDisk=$1
     [ -e ${VirtualDisk} ] || return 1
 
-    local loopdev=$(GetVirtualDiskMappedDevice ${VirtualDisk})
+    local loopdev=$(GetVirtualDiskLoadedDevice ${VirtualDisk})
     [ -n "${loopdev}" ] || return 1
 
     local MountedParts=$(mount | /bin/grep "$(basename ${loopdev}p)" | awk '{print $1}')
@@ -433,7 +433,7 @@ GetVirtualDiskMountedRoot()
 
     IsVirtualDiskMounted ${VirtualDisk} || return 1
 
-    local Partitions=$(GetVirtualDiskMappedParts ${VirtualDisk})
+    local Partitions=$(GetVirtualDiskLoadedPartitions ${VirtualDisk})
     [ -n "${Partitions}" ] || return 1
 
     for Partition in ${Partitions}
@@ -700,13 +700,13 @@ MountVirtualDisk()
     local SysConfDir=${RootDir}/etc/sysconf
     local UserDataDir=${RootDir}/data
 
-    # Check and map virtual disk
-    if ! IsVirtualDiskMapped ${VirtualDisk}; then
-        MapVirtualDisk ${VirtualDisk} || return 1
+    # Check and load virtual disk
+    if ! IsVirtualDiskLoaded ${VirtualDisk}; then
+        LoadVirtualDisk ${VirtualDisk} || return 1
     fi
 
     # Mount partition by partition label
-    local Partitions=$(GetVirtualDiskMappedParts ${VirtualDisk})
+    local Partitions=$(GetVirtualDiskLoadedPartitions ${VirtualDisk})
     [ -n "${Partitions}" ] || return 1
     local LastParts=
 
@@ -794,10 +794,10 @@ UnMountVirtualDisk()
     return 0
 }
 
-# Usage: UnMapVirtualDisk <VirtualDisk>
-UnMapVirtualDisk()
+# Usage: UnLoadVirtualDisk <VirtualDisk>
+UnLoadVirtualDisk()
 {
-    [ $# -eq 1 ] || (echo -e "Usage: UnMapVirtualDisk <VirtualDisk>" && return 1)
+    [ $# -eq 1 ] || (echo -e "Usage: UnLoadVirtualDisk <VirtualDisk>" && return 1)
 
     local VirtualDisk=$1
     [ -e ${VirtualDisk} ] || return 1
@@ -809,12 +809,12 @@ UnMapVirtualDisk()
         UnMountVirtualDisk ${VDisk} ${MountedDir} || return 1
     fi
 
-    if IsVirtualDiskMapped ${VirtualDisk}; then
-        local LoopDevice=$(GetVirtualDiskMappedDevice ${VirtualDisk})
+    if IsVirtualDiskLoaded ${VirtualDisk}; then
+        local LoopDevice=$(GetVirtualDiskLoadedDevice ${VirtualDisk})
         if [ -n "${LoopDevice}" ]; then
-            printf "UMAPPING: ${C_HL}${VirtualDisk}${C_CLR} <--> ${C_YEL}${LoopDevice}${C_CLR} ..."
+            printf "UNLOADING: ${C_HL}${VirtualDisk}${C_CLR} <--> ${C_YEL}${LoopDevice}${C_CLR} "
             kpartx -d ${VirtualDisk} >/dev/null 2>&1
-            if ! IsVirtualDiskMapped ${VirtualDisk}; then
+            if ! IsVirtualDiskLoaded ${VirtualDisk}; then
                 printf " [${C_OK}]\n"
                 return 0
             else
@@ -823,7 +823,7 @@ UnMapVirtualDisk()
             fi
         fi
     fi
-    echo -e "VirtualDisk ${C_HL}${VirtualDisk}${C_CLR} not mapped"
+    echo -e "VirtualDisk ${C_HL}${VirtualDisk}${C_CLR} not loaded"
 
     return 0
 }
@@ -846,9 +846,9 @@ InitializeVirtualDisk()
     # Unmount VirtualDisk
     UnMountVirtualDisk ${VirtualDisk} ${RootDir} || return 1
 
-    # Map VirtualDisk
-    if ! IsVirtualDiskMapped ${VirtualDisk}; then
-        MapVirtualDisk ${VirtualDisk} || return 1
+    # Load VirtualDisk
+    if ! IsVirtualDiskLoaded ${VirtualDisk}; then
+        LoadVirtualDisk ${VirtualDisk} || return 1
     fi
 
     # Format VirtualDisk partitions
@@ -1009,12 +1009,12 @@ GenerateFSTAB()
 
     [ -f ${VirtualDisk} ] || return 1
 
-    # Check and map virtual disk
-    if ! IsVirtualDiskMapped ${VirtualDisk}; then
-        MapVirtualDisk ${VirtualDisk} || return 1
+    # Check and load virtual disk
+    if ! IsVirtualDiskLoaded ${VirtualDisk}; then
+        LoadVirtualDisk ${VirtualDisk} || return 1
     fi
 
-    local Partitions=$(GetVirtualDiskMappedParts ${VirtualDisk})
+    local Partitions=$(GetVirtualDiskLoadedPartitions ${VirtualDisk})
     [ -n "${Partitions}" ] || return 1
 
     local StbiUUID=
@@ -1185,10 +1185,10 @@ SetupBootloader()
     [ -n "${BootloaderID}" ] || return 1
     [ -f ${BootloaderLogfile} ] && rm -f ${BootloaderLogfile}
 
-    IsVirtualDiskMapped ${VirtualDisk} || return 1
+    IsVirtualDiskLoaded ${VirtualDisk} || return 1
     IsTargetMounted ${RootDir} || return 1
 
-    local Partitions=$(GetVirtualDiskMappedParts ${VirtualDisk})
+    local Partitions=$(GetVirtualDiskLoadedPartitions ${VirtualDisk})
     [ -n "${Partitions}" ] || return 1
     for Partition in ${Partitions}
     do
@@ -1198,7 +1198,7 @@ SetupBootloader()
         fi
     done
 
-    local BootDevice=$(GetVirtualDiskMappedDevice ${VirtualDisk})
+    local BootDevice=$(GetVirtualDiskLoadedDevice ${VirtualDisk})
     [ -n "${BootDevice}" ] || return 1
 
     # Setup grub default settings
@@ -1346,9 +1346,9 @@ do
             shift
             MountVirtualDisk ${VDisk} ${RootDir} ${CacheDir} || exit $?
             ;;
-        -u|u|umount|umap)
+        -u|u|umount|uload)
             shift
-            UnMapVirtualDisk ${VDisk} || exit $?
+            UnLoadVirtualDisk ${VDisk} || exit $?
             ;;
         -U|U|unpack)
             shift
@@ -1390,6 +1390,7 @@ do
             InstallPackages ${RootDir} Install ${Packages} || exit $?
             SetUserPassword ${RootDir} ${AccountUsername} ${AccountPassword} || exit $?
             SetupBootloader ${VDisk} ${RootDir} ${BootloaderID} || exit $?
+            UnLoadVirtualDisk ${VDisk} || exit $?
             ;;
         -h|--help|h|help)
             Usage
