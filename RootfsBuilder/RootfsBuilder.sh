@@ -96,70 +96,6 @@ ConfSetValue()
     sed -i "/^\[${Section}\]/,/^\[/ {/^\[${Section}\]/b;/^\[/b;s/^${Key}*=.*/${Key}=${Value}/g;}" ${ConfFile}
 }
 
-# Usage: GetDiskType <Disk>
-GetDiskType()
-{
-    [ $# -eq 1 ] || (echo -e "Usage: GetDiskType <Disk>" && return 1)
-
-    local Disk=$1
-    [ -e ${Disk} ] || return 1
-
-    local DiskType=$(lsblk -n -o TYPE -d ${Disk})
-    [ $? -eq 0 ] || return 1
-
-    echo ${DiskType}
-
-    return 0
-}
-
-# Usage: IsVirtualDisk <Disk>
-IsVirtualDisk()
-{
-    [ $# -eq 1 ] || (echo -e "Usage: IsVirtualDisk <Disk>" && return 1)
-
-    local Disk=$1
-    [ -e ${Disk} ] || return 1
-
-    local DiskType=$(GetDiskType ${Disk})
-    [ $? -eq 0 ] || return 1
-
-    if [ x"${DiskType}" = x"disk" ]; then
-        return 1
-    else
-        return 0
-    fi
-}
-
-# Usage: GetPartitionInfo <Info> <Device>
-GetPartitionInfo()
-{
-    [ $# -eq 2 ] || (echo -e "Usage: GetPartitionType <Info> <Device>" && return 1)
-
-    local Info=$1
-    local Device=$2
-    local expr=""
-    [ -e ${Device} ] || return 1
-
-    case ${Info} in
-        Type|TYPE|T)
-            expr="TYPE"
-            ;;
-        Label|LABEL|L)
-            expr="PARTLABEL"
-            ;;
-        Uuid|UUID|U)
-            expr="UUID"
-            ;;
-        *)
-            ;;
-    esac
-
-    local PartInfo=$(blkid -s ${expr} -o value  ${Device})
-    [ -n "${PartInfo}" ] || return 1
-
-    echo ${PartInfo}
-}
-
 # Usage: IsVirtualDiskLoaded <VirtualDisk>
 IsVirtualDiskLoaded()
 {
@@ -189,27 +125,6 @@ GetVirtualDiskLoadedDevice()
     else
         return 1
     fi
-}
-
-# Usage: GetVirtualDiskLoadedPartitions <VirtualDisk>
-GetVirtualDiskLoadedPartitions()
-{
-    [ $# -eq 1 ] || (echo -e "Usage: GetVirtualDiskLoadedPartitions <VirtualDisk>" && return 1)
-
-    local VirtualDisk=$1
-    [ -f ${VirtualDisk} ] || return 1
-
-    local Partitions=$(kpartx -l ${VirtualDisk} | /bin/grep "^loop[0-9]" | awk '{print $1}')
-    [ -n "${Partitions}" ] || return 1
-
-    local Parts=""
-    for Part in ${Partitions}
-    do
-        Parts="${Parts:+${Parts} }/dev/mapper/${Part}"
-    done
-    [ -n "${Parts}" ] || return 1
-
-    echo -e ${Parts}
 }
 
 # Usage: LoadVirtualDisk <VirtualDisk>
@@ -253,14 +168,14 @@ CreateVirtualDisk()
 # Usage: CreatePartitions <Disk>
 CreatePartitions()
 {
-    [ $# -eq 1 ] || (echo -e "Usage: CreatePartitions <VirtualDisk>" && return 1)
+    [ $# -eq 1 ] || (echo -e "Usage: CreatePartitions <Disk>" && return 1)
 
     local Disk=$1
     [ -e ${Disk} ] || (echo -e "Disk file ${Disk} not exists!" && return 1)
 
     parted -s ${Disk} mklabel gpt                     || return 1
-    parted -s ${Disk} mkpart STBINFO ext4 1M 100M     || return 1
-    parted -s ${Disk} mkpart ESP fat32 100M 200M      || return 1
+    parted -s ${Disk} mkpart ESP fat32 1M 100M        || return 1
+    parted -s ${Disk} mkpart STBINFO ext4 100M 200M   || return 1
     parted -s ${Disk} mkpart RECOVERY ext4 200M 800M  || return 1
     parted -s ${Disk} mkpart ROOT ext4 800M 3000M     || return 1
     parted -s ${Disk} mkpart SYSCONF ext4 3000M 3100M || return 1
@@ -269,6 +184,107 @@ CreatePartitions()
     parted -s ${Disk} set 2 esp on                    || return 1
 
     return 0
+}
+
+# Usage: GetDiskType <Disk>
+GetDiskType()
+{
+    [ $# -eq 1 ] || (echo -e "Usage: GetDiskType <Disk>" && return 1)
+
+    local Disk=$1
+    [ -e ${Disk} ] || return 1
+
+    if lsblk ${Disk} >/dev/null 2>&1; then
+        local DiskType=$(lsblk -n -o TYPE -d ${Disk})
+        [ $? -eq 0 ] || return 1
+    else
+        return 1
+    fi
+
+    echo ${DiskType}
+
+    return 0
+}
+
+# Usage: IsVirtualDisk <Disk>
+IsVirtualDisk()
+{
+    [ $# -eq 1 ] || (echo -e "Usage: IsVirtualDisk <Disk>" && return 1)
+
+    local Disk=$1
+    [ -e ${Disk} ] || return 1
+
+    local folder=$(echo ${Disk} | cut -d '/' -f 2)
+    if [ x"${folder}" = x"dev" ]; then
+        local DiskType=$(GetDiskType ${Disk})
+        if [ x"${DiskType}" = x"disk" ]; then
+            return 1
+        else
+            return 0
+        fi
+    else
+        if blkid ${Disk} >/dev/null 2>&1; then
+            return 0
+        else
+            return 1
+        fi
+    fi
+}
+
+# Usage: GetDiskPartitions <Disk>
+GetDiskPartitions()
+{
+    [ $# -eq 1 ] || (echo -e "Usage: GetDiskPartitions <Disk>" && return 1)
+
+    local Disk=$1
+    [ -e ${Disk} ] || return 1
+
+    local Devices=""
+    local Partitions=""
+
+    if IsVirtualDisk ${Disk}; then
+        Devices=$(kpartx -l ${Disk} | /bin/grep "^loop[0-9]" | awk '{print $1}')
+        [ -n "${Devices}" ] || return 1
+
+        for Partition in ${Devices}
+        do
+            Partitions="${Partitions:+${Partitions} }/dev/mapper/${Partition}"
+        done
+    fi
+
+    [ -n "${Partitions}" ] || return 1
+
+    echo -e ${Partitions}
+}
+
+# Usage: GetPartitionInfo <Info> <Device>
+GetPartitionInfo()
+{
+    [ $# -eq 2 ] || (echo -e "Usage: GetPartitionType <Info> <Device>" && return 1)
+
+    local Info=$1
+    local Device=$2
+    local expr=""
+    [ -e ${Device} ] || return 1
+
+    case ${Info} in
+        Type|TYPE|T)
+            expr="TYPE"
+            ;;
+        Label|LABEL|L)
+            expr="PARTLABEL"
+            ;;
+        Uuid|UUID|U)
+            expr="UUID"
+            ;;
+        *)
+            ;;
+    esac
+
+    local PartInfo=$(blkid -s ${expr} -o value  ${Device})
+    [ -n "${PartInfo}" ] || return 1
+
+    echo ${PartInfo}
 }
 
 # Usage: FormatPartitions <VirtualDisk>
@@ -284,7 +300,7 @@ FormatPartitions()
         return 1
     fi
 
-    local Partitions=$(GetVirtualDiskLoadedPartitions ${VirtualDisk})
+    local Partitions=$(GetDiskPartitions ${VirtualDisk})
     [ -n "${Partitions}" ] || return 1
 
     for Partition in ${Partitions}
@@ -433,7 +449,7 @@ GetVirtualDiskMountedRoot()
 
     IsVirtualDiskMounted ${VirtualDisk} || return 1
 
-    local Partitions=$(GetVirtualDiskLoadedPartitions ${VirtualDisk})
+    local Partitions=$(GetDiskPartitions ${VirtualDisk})
     [ -n "${Partitions}" ] || return 1
 
     for Partition in ${Partitions}
@@ -706,7 +722,7 @@ MountVirtualDisk()
     fi
 
     # Mount partition by partition label
-    local Partitions=$(GetVirtualDiskLoadedPartitions ${VirtualDisk})
+    local Partitions=$(GetDiskPartitions ${VirtualDisk})
     [ -n "${Partitions}" ] || return 1
     local LastParts=
 
@@ -1014,7 +1030,7 @@ GenerateFSTAB()
         LoadVirtualDisk ${VirtualDisk} || return 1
     fi
 
-    local Partitions=$(GetVirtualDiskLoadedPartitions ${VirtualDisk})
+    local Partitions=$(GetDiskPartitions ${VirtualDisk})
     [ -n "${Partitions}" ] || return 1
 
     local StbiUUID=
@@ -1188,7 +1204,7 @@ SetupBootloader()
     IsVirtualDiskLoaded ${VirtualDisk} || return 1
     IsTargetMounted ${RootDir} || return 1
 
-    local Partitions=$(GetVirtualDiskLoadedPartitions ${VirtualDisk})
+    local Partitions=$(GetDiskPartitions ${VirtualDisk})
     [ -n "${Partitions}" ] || return 1
     for Partition in ${Partitions}
     do
