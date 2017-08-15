@@ -1,5 +1,26 @@
 #!/bin/bash
 
+# Base Vars
+WorkDir=$(pwd)
+ConfigFile=${WorkDir}/settings.conf
+[ -f ${ConfigFile} ] || (echo "Error: Cannot find 'settings.conf' in the current folder." && return 1)
+
+VDisk=
+RootDir=
+CacheDir=
+ProfilesDir=
+RootfsPackage=
+Packages=
+ReplaceFiles=
+
+AptUrl=
+Encoding=
+Language=
+Locales=
+BootloaderID=
+AccountUsername=
+AccountPassword=
+
 # Echo Color Settings
 C_CLR="\\e[0m"
 C_HL="\\e[1m"
@@ -1048,6 +1069,58 @@ ReplaceFiles()
     done
 }
 
+# Usage: InstallPreSettings <RootDir> <PreSettingsDir>
+InstallPreSettings()
+{
+    [ $# -eq 2 ] || (echo -e "Usage: InstallPreSettings <RootDir> <PreSettingsDir>" && return 1)
+
+    local RootDir=$1
+    local PreSettingsDir=$2
+    [ -d ${PreSettingsDir} ] || return 1
+    [ -d ${RootDir} ] || return 1
+
+    printf "PRESETTING: Installing Pre-Settings files ..."
+    cp -af ${PreSettingsDir}/* ${RootDir}
+    if [ $? -eq 0 ]; then
+        printf "[${C_OK}]\n"
+        return 0
+    else
+        printf "[${C_FL}]\n"
+        return 1
+    fi
+}
+
+# Usage: InstallExtrenPackages <RootDir> <Packages>
+InstallExtrenPackages()
+{
+    [ $# -eq 2 ] || (echo -e "Usage: InstallExtrenPackages <RootDir> <Packages>" && return 1)
+
+    local RootDir=$1
+    local Packages=$2
+    [ -d ${RootDir} ] || return 1
+    [ -n ${Packages} ] || return 1
+
+    local DpkgOptions=""
+    DpkgOptions="${DpkgOptions:+${DpkgOptions} }--install"
+
+    for Package in ${Packages}
+    do
+        printf "PKGINSTALL: ${C_YEL}Installing${C_CLR} ${C_HL}${Package}${C_CLR} ..."
+        chroot ${RootDir} dpkg ${DpkgOptions} ${Package} >>${InsLogFile} 2>&1
+        if [ $? -ne 0 ]; then
+            chroot ${RootDir} apt install -f >>${InsLogFile} 2>&1
+            if [ $? -ne 0 ]; then
+                printf " [${C_FL}]\n"
+                return 1
+            else
+                printf " [${C_OK}]\n"
+            fi
+        else
+            printf " [${C_OK}]\n"
+        fi
+    done
+}
+
 # Usage: GenerateFSTAB <VirtualDisk> <RootDir>
 GenerateFSTAB()
 {
@@ -1195,6 +1268,11 @@ SetUserPassword()
         fi
         printf " [${C_OK}]\n"
     fi
+
+    # Init Root User with base profile
+    local SkelDir=${RootDir}/etc/skel
+    local RootUserDir=${RootDir}/root
+    cp -a ${SkelDir}/.* ${RootUserDir}
 
     local ChPwdScript="/tmp/ChangeUserPassword"
 
@@ -1346,26 +1424,6 @@ SetupBootloader()
     return 0
 }
 
-WorkDir=$(pwd)
-ConfigFile=${WorkDir}/settings.conf
-[ -f ${ConfigFile} ] || (echo "Error: Cannot find 'settings.conf' in the current folder." && return 1)
-
-VDisk=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings VDisk)
-RootDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings RootDir)
-CacheDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings CacheDir)
-ProfilesDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings ProfilesDir)
-RootfsPackage=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings RootfsPackage)
-Packages=$(GetConfPackages ${ConfigFile})
-ReplaceFiles=$(ConfGetValues ${ConfigFile} Replaces)
-
-AptUrl=$(ConfGetValue ${ConfigFile} Settings AptUrl)
-Encoding=$(ConfGetValue ${ConfigFile} Settings Encoding)
-Language=$(ConfGetValue ${ConfigFile} Settings Language)
-Locales=$(ConfGetValue ${ConfigFile} Settings Locales)
-BootloaderID=$(ConfGetValue ${ConfigFile} Settings BootloaderID)
-AccountUsername=$(ConfGetValue ${ConfigFile} Settings AccountUsername)
-AccountPassword=$(ConfGetValue ${ConfigFile} Settings AccountPassword)
-
 ShowSettings()
 {
     echo -e "VDisk = ${VDisk}"
@@ -1400,80 +1458,112 @@ Commands:
 EOF
 }
 
-CheckPrivilege || exit $?
-CheckBuildEnvironment || exit $?
+doInitEnvironment()
+{
+    VDisk=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings VDisk)
+    RootDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings RootDir)
+    CacheDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings CacheDir)
+    ProfilesDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings ProfilesDir)
+    RootfsPackage=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings RootfsPackage)
+    Packages=$(GetConfPackages ${ConfigFile})
+    ReplaceFiles=$(ConfGetValues ${ConfigFile} Replaces)
 
-#ShowSettings
+    AptUrl=$(ConfGetValue ${ConfigFile} Settings AptUrl)
+    Encoding=$(ConfGetValue ${ConfigFile} Settings Encoding)
+    Language=$(ConfGetValue ${ConfigFile} Settings Language)
+    Locales=$(ConfGetValue ${ConfigFile} Settings Locales)
+    BootloaderID=$(ConfGetValue ${ConfigFile} Settings BootloaderID)
+    AccountUsername=$(ConfGetValue ${ConfigFile} Settings AccountUsername)
+    AccountPassword=$(ConfGetValue ${ConfigFile} Settings AccountPassword)
 
-while [ $# -ne 0 ]
-do
-    case $1 in
-        -c|c|create)
-            shift
-            CreateVirtualDisk ${VDisk} || exit $?
-            CreatePartitions ${VDisk} || exit $?
-            ;;
-        -i|i|init)
-            shift
-            InitializeVirtualDisk ${VDisk} ${RootDir} || exit $?
-            ;;
-        -m|m|mount)
-            shift
-            MountVirtualDisk ${VDisk} ${RootDir} ${CacheDir} || exit $?
-            ;;
-        -u|u|umount|uload)
-            shift
-            UnLoadVirtualDisk ${VDisk} || exit $?
-            ;;
-        -U|U|unpack)
-            shift
-            UnPackRootFS ${RootfsPackage} ${RootDir} || exit $?
-            ;;
-        -P|P|pre-process)
-            shift
-            GenerateFSTAB ${VDisk} ${RootDir} || exit $?
-            ReplaceFiles ${RootDir} ${ProfilesDir} ${ReplaceFiles} || exit $?
-            GenerateLocales ${RootDir} ${Locales} || exit $?
-            ;;
-        -I|I|install)
-            shift
-            InstallPackages ${RootDir} Update || exit $?
-            InstallPackages ${RootDir} Upgrade || exit $?
-            InstallPackages ${RootDir} Install ${Packages} || exit $?
-            ;;
-        -S|S|setup)
-            shift
-            SetUserPassword ${RootDir} ${AccountUsername} ${AccountPassword} || exit $?
-            SetupBootloader ${VDisk} ${RootDir} ${BootloaderID} || exit $?
-            ;;
-        -a|a|auto)
-            shift
-            InitializeVirtualDisk ${VDisk} ${RootDir} || exit $?
-            MountVirtualDisk ${VDisk} ${RootDir} ${CacheDir}
-            RST=$?
-            if [ ${RST} -eq 99 ]; then
-                UnPackRootFS ${RootfsPackage} ${RootDir} || exit $?
+    #ShowSettings
+}
+
+doInstall()
+{
+    InstallPackages ${RootDir} Update || exit $?
+    InstallPackages ${RootDir} Upgrade || exit $?
+    InstallPackages ${RootDir} Install ${Packages} || exit $?
+}
+
+doMain()
+{
+    doInitEnvironment || exit $?
+    CheckPrivilege || exit $?
+    CheckBuildEnvironment || exit $?
+
+    while [ $# -ne 0 ]
+    do
+        case $1 in
+            -c|c|create)
+                shift
+                CreateVirtualDisk ${VDisk} || exit $?
+                CreatePartitions ${VDisk} || exit $?
+                ;;
+            -i|i|init)
+                shift
+                InitializeVirtualDisk ${VDisk} ${RootDir} || exit $?
+                ;;
+            -m|m|mount)
+                shift
                 MountVirtualDisk ${VDisk} ${RootDir} ${CacheDir} || exit $?
-            elif [ ${RST} -ne 0 ]; then
+                ;;
+            -u|u|umount|uload)
+                shift
+                UnLoadVirtualDisk ${VDisk} || exit $?
+                ;;
+            -U|U|unpack)
+                shift
+                UnPackRootFS ${RootfsPackage} ${RootDir} || exit $?
+                ;;
+            -P|P|pre-process)
+                shift
+                GenerateFSTAB ${VDisk} ${RootDir} || exit $?
+                ReplaceFiles ${RootDir} ${ProfilesDir} ${ReplaceFiles} || exit $?
+                GenerateLocales ${RootDir} ${Locales} || exit $?
+                ;;
+            -I|I|install)
+                shift
+                InstallPackages ${RootDir} Update || exit $?
+                InstallPackages ${RootDir} Upgrade || exit $?
+                InstallPackages ${RootDir} Install ${Packages} || exit $?
+                ;;
+            -S|S|setup)
+                shift
+                SetUserPassword ${RootDir} ${AccountUsername} ${AccountPassword} || exit $?
+                SetupBootloader ${VDisk} ${RootDir} ${BootloaderID} || exit $?
+                ;;
+            -a|a|auto)
+                shift
+                InitializeVirtualDisk ${VDisk} ${RootDir} || exit $?
+                MountVirtualDisk ${VDisk} ${RootDir} ${CacheDir}
+                RST=$?
+                if [ ${RST} -eq 99 ]; then
+                    UnPackRootFS ${RootfsPackage} ${RootDir} || exit $?
+                    MountVirtualDisk ${VDisk} ${RootDir} ${CacheDir} || exit $?
+                elif [ ${RST} -ne 0 ]; then
+                    exit 1
+                fi
+                GenerateFSTAB ${VDisk} ${RootDir} || exit $?
+                ReplaceFiles ${RootDir} ${ProfilesDir} ${ReplaceFiles} || exit $?
+                GenerateLocales ${RootDir} ${Locales} || exit $?
+                InstallPackages ${RootDir} Update || exit $?
+                InstallPackages ${RootDir} Upgrade || exit $?
+                InstallPackages ${RootDir} Install ${Packages} || exit $?
+                SetUserPassword ${RootDir} ${AccountUsername} ${AccountPassword} || exit $?
+                SetupBootloader ${VDisk} ${RootDir} ${BootloaderID} || exit $?
+                UnLoadVirtualDisk ${VDisk} || exit $?
+                ;;
+            -h|--help|h|help)
+                Usage
+                exit 0
+                ;;
+            *)
+                Usage
                 exit 1
-            fi
-            GenerateFSTAB ${VDisk} ${RootDir} || exit $?
-            ReplaceFiles ${RootDir} ${ProfilesDir} ${ReplaceFiles} || exit $?
-            GenerateLocales ${RootDir} ${Locales} || exit $?
-            InstallPackages ${RootDir} Update || exit $?
-            InstallPackages ${RootDir} Upgrade || exit $?
-            InstallPackages ${RootDir} Install ${Packages} || exit $?
-            SetUserPassword ${RootDir} ${AccountUsername} ${AccountPassword} || exit $?
-            SetupBootloader ${VDisk} ${RootDir} ${BootloaderID} || exit $?
-            UnLoadVirtualDisk ${VDisk} || exit $?
-            ;;
-        -h|--help|h|help)
-            Usage
-            exit 0
-            ;;
-        *)
-            Usage
-            exit 1
-            ;;
-    esac
-done
+                ;;
+        esac
+    done
+}
+
+doMain $@
