@@ -257,8 +257,8 @@ GetDiskPartitions()
     echo -e ${Partitions}
 }
 
-# Usage: GetPartitionInfo <Info> <Device>
-GetPartitionInfo()
+# Usage: GetDiskPartInfo <Info> <Device>
+GetDiskPartInfo()
 {
     [ $# -eq 2 ] || (echo -e "Usage: GetPartitionType <Info> <Device>" && return 1)
 
@@ -277,7 +277,11 @@ GetPartitionInfo()
         Uuid|UUID|U)
             expr="UUID"
             ;;
+        PartUUID|PARTUUID|PU)
+            expr="PARTUUID"
+            ;;
         *)
+            return 1
             ;;
     esac
 
@@ -285,6 +289,35 @@ GetPartitionInfo()
     [ -n "${PartInfo}" ] || return 1
 
     echo ${PartInfo}
+}
+
+# Usage: GetDiskPartDevice <Disk> <Info> <String>
+GetDiskPartDevice()
+{
+    [ $# -eq 3 ] || (echo -e "Usage: GetDiskPartDevice <Disk> <Info> <String>" && return 1)
+
+    local Disk=$1
+    local Info=$2
+    local String=$3
+    local expr=""
+    [ -n ${String} ] || return 1
+
+    local Partitions=$(GetDiskPartitions ${Disk})
+    [ -n "${Partitions}" ] || return 1
+
+    for Partition in ${Partitions}
+    do
+        local PartInfo=$(GetDiskPartInfo ${Info} ${Partition})
+        [ $? -eq 0 ] || return 1
+
+        if [ x"${PartInfo}" = x"${String}" ]; then
+            #echo ${Partition##*[a-zA-Z]}
+            echo ${Partition}
+            return 0
+        fi
+    done
+
+    return 1
 }
 
 # Usage: FormatPartitions <VirtualDisk>
@@ -305,7 +338,7 @@ FormatPartitions()
 
     for Partition in ${Partitions}
     do
-        local PartType=$(GetPartitionInfo Type ${Partition})
+        local PartType=$(GetDiskPartInfo Type ${Partition})
         if [ -n "${PartType}" ]; then
             case ${PartType} in
                 ext4)
@@ -322,7 +355,7 @@ FormatPartitions()
                     ;;
             esac
         else
-            local PartLabel=$(GetPartitionInfo Label ${Partition})
+            local PartLabel=$(GetDiskPartInfo Label ${Partition})
             [ -n "${PartLabel}" ] || (echo -e "FORMAT_ERROR: Get Partition Information failed" && return 1)
             case ${PartLabel} in
                 ESP)
@@ -454,7 +487,7 @@ GetVirtualDiskMountedRoot()
 
     for Partition in ${Partitions}
     do
-        local PartLabel=$(GetPartitionInfo Label ${Partition})
+        local PartLabel=$(GetDiskPartInfo Label ${Partition})
         [ -n "${PartLabel}" ] || return 1
         if [ x"${PartLabel}" == x"ROOT" ]; then
             IsTargetMounted ${Partition} || return 1
@@ -729,7 +762,7 @@ MountVirtualDisk()
     # Find ROOT partition and mount it first
     for dev in ${Partitions}
     do
-        local PartLabel=$(GetPartitionInfo Label $(realpath -L ${dev}))
+        local PartLabel=$(GetDiskPartInfo Label $(realpath -L ${dev}))
         [ -n "${PartLabel}" ] || return 1
         if [ x"${PartLabel}" == x"ROOT" ]; then
             mkdir -p ${RootDir} || return 1
@@ -742,7 +775,7 @@ MountVirtualDisk()
 
     for dev in ${LastParts}
     do
-        local PartLabel=$(GetPartitionInfo Label $(realpath -L ${dev}))
+        local PartLabel=$(GetDiskPartInfo Label $(realpath -L ${dev}))
         [ -n "${PartLabel}" ] || return 1
         case ${PartLabel} in
             STBINFO)
@@ -1042,31 +1075,31 @@ GenerateFSTAB()
 
     for dev in ${Partitions}
     do
-        local PartLabel=$(GetPartitionInfo Label $(realpath -L ${dev}))
+        local PartLabel=$(GetDiskPartInfo Label $(realpath -L ${dev}))
         [ -n "${PartLabel}" ] || return 1
         case ${PartLabel} in
-            STBINFO)
-                StbiUUID=$(GetPartitionInfo UUID $(realpath -L ${dev}))
-                [ -n "${StbiUUID}" ] || return 1
-            ;;
             ESP)
-                UefiUUID=$(GetPartitionInfo UUID $(realpath -L ${dev}))
+                UefiUUID=$(GetDiskPartInfo UUID $(realpath -L ${dev}))
                 [ -n "${UefiUUID}" ] || return 1
             ;;
+            STBINFO)
+                StbiUUID=$(GetDiskPartInfo UUID $(realpath -L ${dev}))
+                [ -n "${StbiUUID}" ] || return 1
+            ;;
             RECOVERY)
-                RecoUUID=$(GetPartitionInfo UUID $(realpath -L ${dev}))
+                RecoUUID=$(GetDiskPartInfo UUID $(realpath -L ${dev}))
                 [ -n "${RecoUUID}" ] || return 1
             ;;
             ROOT)
-                RootUUID=$(GetPartitionInfo UUID $(realpath -L ${dev}))
+                RootUUID=$(GetDiskPartInfo UUID $(realpath -L ${dev}))
                 [ -n "${RootUUID}" ] || return 1
             ;;
             SYSCONF|CONFIG)
-                ConfUUID=$(GetPartitionInfo UUID $(realpath -L ${dev}))
+                ConfUUID=$(GetDiskPartInfo UUID $(realpath -L ${dev}))
                 [ -n "${ConfUUID}" ] || return 1
             ;;
             USERDATA)
-                UserUUID=$(GetPartitionInfo UUID $(realpath -L ${dev}))
+                UserUUID=$(GetDiskPartInfo UUID $(realpath -L ${dev}))
                 [ -n "${UserUUID}" ] || return 1
             ;;
             *)
@@ -1096,8 +1129,8 @@ EOF
     fi
     printf " [${C_OK}]\n"
 
-    echo -e "  ${C_YEL}STBINFO${C_CLR}  UUID = ${C_BLU}${StbiUUID}${C_CLR}"
     echo -e "  ${C_YEL}ESP${C_CLR}      UUID = ${C_BLU}${UefiUUID}${C_CLR}"
+    echo -e "  ${C_YEL}STBINFO${C_CLR}  UUID = ${C_BLU}${StbiUUID}${C_CLR}"
     echo -e "  ${C_YEL}RECOVERY${C_CLR} UUID = ${C_BLU}${RecoUUID}${C_CLR}"
     echo -e "  ${C_YEL}ROOT${C_CLR}     UUID = ${C_BLU}${RootUUID}${C_CLR}"
     echo -e "  ${C_YEL}SYSCONF${C_CLR}  UUID = ${C_BLU}${ConfUUID}${C_CLR}"
@@ -1208,7 +1241,7 @@ SetupBootloader()
     [ -n "${Partitions}" ] || return 1
     for Partition in ${Partitions}
     do
-        local PartLabel=$(GetPartitionInfo Label $(realpath -L ${Partition}))
+        local PartLabel=$(GetDiskPartInfo Label $(realpath -L ${Partition}))
         if [ x"${PartLabel}" == x"ESP" ]; then
             IsTargetMounted ${Partition} || return 1
         fi
@@ -1219,13 +1252,36 @@ SetupBootloader()
 
     # Setup grub default settings
     local GrubDefault=${RootDir}/etc/default/grub
+    local RootPartDev=$(GetDiskPartDevice ${VirtualDisk} LABEL ROOT)
+    local RootPartUUID=$(GetDiskPartInfo PARTUUID ${RootPartDev})
     if [ -f ${GrubDefault} ]; then
         local Rst=0
         printf "BOOTLOADER: Update Bootloader Settings ..."
-        sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT.*/GRUB_CMDLINE_LINUX_DEFAULT=""/' ${GrubDefault}
+
+        # Bootup and Shutdown logo
+        if /bin/grep -q "GRUB_CMDLINE_LINUX_DEFAULT" ${GrubDefault}; then
+            sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT.*/GRUB_CMDLINE_LINUX_DEFAULT=""/' ${GrubDefault}
+        else
+            echo "GRUB_CMDLINE_LINUX_DEFAULT=" >> ${GrubDefault}
+        fi
         Rst=$((${Rst} + $?))
-        echo "GRUB_DISABLE_OS_PROBER=true" >> ${GrubDefault}
+
+        # Close Other OS Prober
+        if /bin/grep -q "GRUB_DISABLE_OS_PROBER" ${GrubDefault}; then
+            sed -i 's/^GRUB_DISABLE_OS_PROBER.*/GRUB_DISABLE_OS_PROBER=true/' ${GrubDefault}
+        else
+            echo "GRUB_DISABLE_OS_PROBER=true" >> ${GrubDefault}
+        fi
         Rst=$((${Rst} + $?))
+
+        # Set Root Partition PARTUUID
+        if /bin/grep -q "GRUB_FORCE_PARTUUID" ${GrubDefault}; then
+            sed -i 's/^GRUB_FORCE_PARTUUID.*/GRUB_FORCE_PARTUUID=${RootPartUUID}/' ${GrubDefault}
+        else
+            echo "GRUB_FORCE_PARTUUID=${RootPartUUID}" >> ${GrubDefault}
+        fi
+        Rst=$((${Rst} + $?))
+
         if [ ${Rst} -ne 0 ]; then
             printf " [${C_FL}]\n"
         else
@@ -1258,11 +1314,14 @@ SetupBootloader()
     fi
 
     # GENERATE GRUB EFI IMAGE AGAIN TO FIX GRUB CAN NOT FIND CONFIG
+    local RootPartitionIndex=${RootPartDev##*[a-zA-Z]}
     local BootIMGOptions=""
     BootIMGOptions="${BootIMGOptions:+${BootIMGOptions} }--format ${BootloaderArch}"
     BootIMGOptions="${BootIMGOptions:+${BootIMGOptions} }--directory /usr/lib/grub/${BootloaderArch}"
-    BootIMGOptions="${BootIMGOptions:+${BootIMGOptions} }--prefix (hd0,gpt2)/boot/grub"
+    BootIMGOptions="${BootIMGOptions:+${BootIMGOptions} }--prefix (hd0,gpt${RootPartitionIndex})/boot/grub"
     BootIMGOptions="${BootIMGOptions:+${BootIMGOptions} }--compression auto"
+
+    echo $BootIMGOptions
 
     # TODO: move modules config to settings.conf
     local BootGrubModules="ext2 part_gpt"
