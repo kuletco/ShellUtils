@@ -1080,7 +1080,7 @@ InstallPreSettings()
     [ -d ${RootDir} ] || return 1
 
     printf "PRESETTING: Installing Pre-Settings files ..."
-    cp -af ${PreSettingsDir}/* ${RootDir}
+    rsync -aq ${PreSettingsDir}/ ${RootDir}
     if [ $? -eq 0 ]; then
         printf "[${C_OK}]\n"
         return 0
@@ -1224,17 +1224,18 @@ GenerateLocales()
     [ -d "${RootDir}" ] || return 1
     [ -n "${Locales}" ] || return 1
 
-    IsTargetMounted ${RootDir} || (echo -e "${C_BLU}${RootDIr}${C_CLR} not mounted" && return 1)
-    [ -x ${RootDir}/usr/sbin/locale-gen ] || (echo -e "Please unpack rootfs package first." && return 1)
-
-    for locale in ${Locales}
-    do
-        printf "GENLOCALES: Generating ${C_HL}${locale}${C_CLR} ..."
-        if ! chroot ${RootDir} locale-gen ${locale} >/dev/null 2>&1; then
-            printf " [${C_FL}]\n"
-        fi
-        printf " [${C_OK}]\n"
-    done
+    IsTargetMounted ${RootDir} || (echo -e "${C_BLU}${RootDIr}${C_CLR} not mounted"; return 1)
+    if [ -x ${RootDir}/usr/sbin/locale-gen ]; then
+        for locale in ${Locales}
+        do
+            printf "GENLOCALES: Generating ${C_HL}${locale}${C_CLR} ..."
+            if ! chroot ${RootDir} locale-gen ${locale} >/dev/null 2>&1; then
+                printf " [${C_FL}]\n"
+            else
+                printf " [${C_OK}]\n"
+            fi
+        done
+    fi
 
     return 0
 }
@@ -1272,7 +1273,7 @@ SetUserPassword()
     # Init Root User with base profile
     local SkelDir=${RootDir}/etc/skel
     local RootUserDir=${RootDir}/root
-    cp -a ${SkelDir}/.* ${RootUserDir}
+    rsync -aq ${SkelDir}/ ${RootUserDir}
 
     local ChPwdScript="/tmp/ChangeUserPassword"
 
@@ -1338,7 +1339,7 @@ SetupBootloader()
 
         # Bootup and Shutdown logo
         if /bin/grep -q "GRUB_CMDLINE_LINUX_DEFAULT" ${GrubDefault}; then
-            sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT.*/GRUB_CMDLINE_LINUX_DEFAULT=""/' ${GrubDefault}
+            sed -i "s/^GRUB_CMDLINE_LINUX_DEFAULT.*/GRUB_CMDLINE_LINUX_DEFAULT=/" ${GrubDefault}
         else
             echo "GRUB_CMDLINE_LINUX_DEFAULT=" >> ${GrubDefault}
         fi
@@ -1346,7 +1347,7 @@ SetupBootloader()
 
         # Close Other OS Prober
         if /bin/grep -q "GRUB_DISABLE_OS_PROBER" ${GrubDefault}; then
-            sed -i 's/^GRUB_DISABLE_OS_PROBER.*/GRUB_DISABLE_OS_PROBER=true/' ${GrubDefault}
+            sed -i "s/^GRUB_DISABLE_OS_PROBER.*/GRUB_DISABLE_OS_PROBER=true/" ${GrubDefault}
         else
             echo "GRUB_DISABLE_OS_PROBER=true" >> ${GrubDefault}
         fi
@@ -1354,7 +1355,7 @@ SetupBootloader()
 
         # Set Root Partition PARTUUID
         if /bin/grep -q "GRUB_FORCE_PARTUUID" ${GrubDefault}; then
-            sed -i 's/^GRUB_FORCE_PARTUUID.*/GRUB_FORCE_PARTUUID=${RootPartUUID}/' ${GrubDefault}
+            sed -i "s/^GRUB_FORCE_PARTUUID.*/GRUB_FORCE_PARTUUID=${RootPartUUID}/" ${GrubDefault}
         else
             echo "GRUB_FORCE_PARTUUID=${RootPartUUID}" >> ${GrubDefault}
         fi
@@ -1397,9 +1398,7 @@ SetupBootloader()
     BootIMGOptions="${BootIMGOptions:+${BootIMGOptions} }--format ${BootloaderArch}"
     BootIMGOptions="${BootIMGOptions:+${BootIMGOptions} }--directory /usr/lib/grub/${BootloaderArch}"
     BootIMGOptions="${BootIMGOptions:+${BootIMGOptions} }--prefix (hd0,gpt${RootPartitionIndex})/boot/grub"
-    BootIMGOptions="${BootIMGOptions:+${BootIMGOptions} }--compression auto"
-
-    echo $BootIMGOptions
+    #BootIMGOptions="${BootIMGOptions:+${BootIMGOptions} }--compression auto"
 
     # TODO: move modules config to settings.conf
     local BootGrubModules="ext2 part_gpt"
@@ -1421,6 +1420,31 @@ SetupBootloader()
     done
 
     [ -f ${BootloaderLogfile} ] && rm -f ${BootloaderLogfile}
+    return 0
+}
+
+# Usage: CompressVirtualDisk <VirtualDisk>
+CompressVirtualDisk()
+{
+    [ $# -eq 1 ] || (echo -e "Usage: CompressVirtualDisk <VirtualDisk>" && return 1)
+
+    local VirtualDisk=$1
+    local ZipFile=${VirtualDisk}.zip
+    [ -f ${VirtualDisk} ] || return 1
+    [ -f ${ZipFile} ] && rm -f ${ZipFile}
+
+    local ZipOptions=""
+    ZipOptions="${ZipOptions:+${ZipOptions} }-q"
+
+    printf "COMPRESS: Compressing the image ${C_YEL}$(basename ${VirtualDisk})${C_CLR} --> ${C_YEL}$(basename ${ZipFile})${C_CLR}"
+    zip ${ZipOptions} ${ZipFile} ${VirtualDisk}
+    if [ $? -ne 0 ]; then
+        printf " [${C_FL}]\n"
+        return 1
+    else
+        printf " [${C_OK}]\n"
+    fi
+
     return 0
 }
 
@@ -1455,6 +1479,7 @@ Commands:
   -P|P|pre-process : Pre-Process unpacked filesystem, include replace files, gen-locales, ie....
   -I|I|install     : Install extra packages.
   -S|S|setup       : Setup settings, include setup bootloader, user password, ie....
+  -z|z|zip         : Compress image to a zip file.
 EOF
 }
 
@@ -1479,11 +1504,13 @@ doInitEnvironment()
     #ShowSettings
 }
 
-doInstall()
+doInstallPackages()
 {
-    InstallPackages ${RootDir} Update || exit $?
-    InstallPackages ${RootDir} Upgrade || exit $?
-    InstallPackages ${RootDir} Install ${Packages} || exit $?
+    InstallPackages ${RootDir} Update || return $?
+    InstallPackages ${RootDir} Upgrade || return $?
+    InstallPackages ${RootDir} Install ${Packages} || return $?
+
+    return 0
 }
 
 doMain()
@@ -1520,13 +1547,10 @@ doMain()
                 shift
                 GenerateFSTAB ${VDisk} ${RootDir} || exit $?
                 ReplaceFiles ${RootDir} ${ProfilesDir} ${ReplaceFiles} || exit $?
-                GenerateLocales ${RootDir} ${Locales} || exit $?
                 ;;
             -I|I|install)
                 shift
-                InstallPackages ${RootDir} Update || exit $?
-                InstallPackages ${RootDir} Upgrade || exit $?
-                InstallPackages ${RootDir} Install ${Packages} || exit $?
+                doInstallPackages || exit $?
                 ;;
             -S|S|setup)
                 shift
@@ -1546,13 +1570,14 @@ doMain()
                 fi
                 GenerateFSTAB ${VDisk} ${RootDir} || exit $?
                 ReplaceFiles ${RootDir} ${ProfilesDir} ${ReplaceFiles} || exit $?
-                GenerateLocales ${RootDir} ${Locales} || exit $?
-                InstallPackages ${RootDir} Update || exit $?
-                InstallPackages ${RootDir} Upgrade || exit $?
-                InstallPackages ${RootDir} Install ${Packages} || exit $?
+                doInstallPackages || $?
                 SetUserPassword ${RootDir} ${AccountUsername} ${AccountPassword} || exit $?
                 SetupBootloader ${VDisk} ${RootDir} ${BootloaderID} || exit $?
                 UnLoadVirtualDisk ${VDisk} || exit $?
+                ;;
+            -z|z|zip)
+                shift
+                CompressVirtualDisk ${VDisk} || exit $?
                 ;;
             -h|--help|h|help)
                 Usage
