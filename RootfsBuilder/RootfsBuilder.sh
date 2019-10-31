@@ -9,8 +9,10 @@ VDisk=
 RootDir=
 CacheDir=
 ProfilesDir=
+ExtPackageDir=
 RootfsPackage=
 Packages=
+PackagesExtra=
 ReplaceFiles=
 
 AptUrl=
@@ -957,22 +959,23 @@ UnPackRootFS()
     fi
 }
 
-# Usage: GetConfPackages <ConfigFile>
+# Usage: GetConfPackages <ConfigFile> <Section>
 GetConfPackages()
 {
-    [ $# -eq 1 ] || (echo -e "Usage: GetConfPackages <ConfigFile>" && return 1)
+    [ $# -eq 2 ] || (echo -e "Usage: GetConfPackages <ConfigFile> <Section>" && return 1)
     local ConfigFile=$1
+    local Section=$2
     local Packages=""
 
     [ -n "${ConfigFile}" ] || return 1
     [ -f "${ConfigFile}" ] || return 1
 
-    local PackagesList=$(ConfGetKeys ${ConfigFile} Packages)
+    local PackagesList=$(ConfGetKeys ${ConfigFile} ${Section})
     [ -n "${PackagesList}" ] || return 1
 
     for Package in ${PackagesList}
     do
-        local Enabled=$(ConfGetValue ${ConfigFile} Packages ${Package})
+        local Enabled=$(ConfGetValue ${ConfigFile} ${Section} ${Package})
         if [ -n "${Enabled}" ]; then
             case ${Enabled} in
                 y|Y|yes|YES|Yes)
@@ -1126,10 +1129,11 @@ InstallExtrenPackages()
 
     for Package in ${Packages}
     do
+        [ -f "${ExtPackageDir}/${Package}" ] || continue
         printf "PKGINSTALL: ${C_YEL}Installing${C_CLR} ${C_HL}${Package}${C_CLR} ..."
-        chroot ${RootDir} dpkg ${DpkgOptions} ${Package} >>${InsLogFile} 2>&1
+        DEBIAN_FRONTEND=noninteractive chroot ${RootDir} dpkg ${DpkgOptions} ${ExtPackageDir}/${Package} >>${InsLogFile} 2>&1
         if [ $? -ne 0 ]; then
-            chroot ${RootDir} apt install -f >>${InsLogFile} 2>&1
+            DEBIAN_FRONTEND=noninteractive chroot ${RootDir} apt install -f >>${InsLogFile} 2>&1
             if [ $? -ne 0 ]; then
                 printf " [${C_FL}]\n"
                 return 1
@@ -1490,6 +1494,42 @@ ShowSettings()
     echo -e "AccountPassword = ${AccountPassword}"
 }
 
+doInitEnvironment()
+{
+    VDisk=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings VDisk)
+    RootDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings RootDir)
+    CacheDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings CacheDir)
+    ProfilesDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings ProfilesDir)
+    ExtPackageDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings ExtPackageDir)
+    RootfsPackage=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings RootfsPackage)
+    Packages=$(GetConfPackages ${ConfigFile} Packages)
+    PackagesExtra=$(GetConfPackages ${ConfigFile} PackagesExtra)
+    ReplaceFiles=$(ConfGetValues ${ConfigFile} Replaces)
+
+    AptUrl=$(ConfGetValue ${ConfigFile} Settings AptUrl)
+    Encoding=$(ConfGetValue ${ConfigFile} Settings Encoding)
+    Language=$(ConfGetValue ${ConfigFile} Settings Language)
+    Locales=$(ConfGetValue ${ConfigFile} Settings Locales)
+    BootloaderID=$(ConfGetValue ${ConfigFile} Settings BootloaderID)
+    AccountUsername=$(ConfGetValue ${ConfigFile} Settings AccountUsername)
+    AccountPassword=$(ConfGetValue ${ConfigFile} Settings AccountPassword)
+}
+
+doInstallPackages()
+{
+    InstallPackages ${RootDir} Update || return $?
+    InstallPackages ${RootDir} Upgrade || return $?
+    InstallPackages ${RootDir} Install ${Packages} || return $?
+
+    return 0
+}
+
+doInstallExtraPackages()
+{
+    InstallExtrenPackages ${RootDir} ${PackagesExtra} || return $?
+    return 0
+}
+
 Usage()
 {
     local USAGE=''
@@ -1502,40 +1542,12 @@ Usage()
     USAGE="${USAGE:+${USAGE}\n}  -u|u|umount      : Unmount virtual disk from '$(basename ${RootDir})'."
     USAGE="${USAGE:+${USAGE}\n}  -U|U|unpack      : Unpack the base filesystem(default is '$(basename ${RootfsPackage})') to '$(basename ${RootDir})'."
     USAGE="${USAGE:+${USAGE}\n}  -P|P|pre-process : Pre-Process unpacked filesystem, include replace files, gen-locales, ie...."
-    USAGE="${USAGE:+${USAGE}\n}  -I|I|install     : Install extra packages."
+    USAGE="${USAGE:+${USAGE}\n}  -I|I|install     : Install packages."
+    USAGE="${USAGE:+${USAGE}\n}  -E|E|instext     : Install extra packages."
     USAGE="${USAGE:+${USAGE}\n}  -S|S|setup       : Setup settings, include setup bootloader, user password, ie...."
+    USAGE="${USAGE:+${USAGE}\n}  -s|show-settings : Show current settings."
     USAGE="${USAGE:+${USAGE}\n}  -z|z|zip         : Compress image to a zip file."
     echo -e ${USAGE}
-}
-
-doInitEnvironment()
-{
-    VDisk=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings VDisk)
-    RootDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings RootDir)
-    CacheDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings CacheDir)
-    ProfilesDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings ProfilesDir)
-    RootfsPackage=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings RootfsPackage)
-    Packages=$(GetConfPackages ${ConfigFile})
-    ReplaceFiles=$(ConfGetValues ${ConfigFile} Replaces)
-
-    AptUrl=$(ConfGetValue ${ConfigFile} Settings AptUrl)
-    Encoding=$(ConfGetValue ${ConfigFile} Settings Encoding)
-    Language=$(ConfGetValue ${ConfigFile} Settings Language)
-    Locales=$(ConfGetValue ${ConfigFile} Settings Locales)
-    BootloaderID=$(ConfGetValue ${ConfigFile} Settings BootloaderID)
-    AccountUsername=$(ConfGetValue ${ConfigFile} Settings AccountUsername)
-    AccountPassword=$(ConfGetValue ${ConfigFile} Settings AccountPassword)
-
-    #ShowSettings
-}
-
-doInstallPackages()
-{
-    InstallPackages ${RootDir} Update || return $?
-    InstallPackages ${RootDir} Upgrade || return $?
-    InstallPackages ${RootDir} Install ${Packages} || return $?
-
-    return 0
 }
 
 doMain()
@@ -1577,6 +1589,10 @@ doMain()
                 shift
                 doInstallPackages || exit $?
                 ;;
+            -E|E|instext)
+                shift
+                doInstallExtraPackages || exit $?
+                ;;
             -S|S|setup)
                 shift
                 SetUserPassword ${RootDir} ${AccountUsername} ${AccountPassword} || exit $?
@@ -1596,6 +1612,7 @@ doMain()
                 GenerateFSTAB ${VDisk} ${RootDir} || exit $?
                 ReplaceFiles ${RootDir} ${ProfilesDir} ${ReplaceFiles} || exit $?
                 doInstallPackages || exit $?
+                doInstallExtraPackages || exit $?
                 SetUserPassword ${RootDir} ${AccountUsername} ${AccountPassword} || exit $?
                 SetupBootloader ${VDisk} ${RootDir} ${BootloaderID} || exit $?
                 UnLoadVirtualDisk ${VDisk} || exit $?
@@ -1603,6 +1620,10 @@ doMain()
             -z|z|zip)
                 shift
                 CompressVirtualDisk ${VDisk} || exit $?
+                ;;
+            -s|show-settings)
+                shift
+                ShowSettings
                 ;;
             -h|--help|h|help)
                 Usage
