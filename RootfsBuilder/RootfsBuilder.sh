@@ -412,16 +412,20 @@ FormatPartitions()
     return 0
 }
 
-# Usage: IsTargetMounted <Device>
+# Usage: IsTargetMounted <Target>
 IsTargetMounted()
 {
-    [ $# -eq 1 ] || (echo -e "Usage: IsTargetMounted <Device>" && return 1)
+    [ $# -eq 1 ] || (echo -e "Usage: IsTargetMounted <Target>" && return 1)
 
-    local Device=$1
+    local Target=$1
 
-    mount | /bin/grep -q ${Device}
-
-    return $?
+    if [ -d "${Target}" ]; then
+        return $(mountpoint -q "${Target}")
+    elif [ -f "${Target}" -o -L "${Target}" ]; then
+        return $(mount | /bin/grep -q ${Target})
+    else
+        return 1
+    fi
 }
 
 # Usage: GetTargetMountPoint <Device>
