@@ -195,12 +195,15 @@ CreatePartitions()
     [ -e ${Disk} ] || (echo -e "Disk file ${Disk} not exists!" && return 1)
 
     parted -s ${Disk} mklabel gpt                     || return 1
-    parted -s ${Disk} mkpart ESP fat32 1M 100M        || return 1
-    parted -s ${Disk} mkpart STBINFO ext4 100M 200M   || return 1
-    parted -s ${Disk} mkpart RECOVERY ext4 200M 800M  || return 1
-    parted -s ${Disk} mkpart ROOT ext4 800M 3000M     || return 1
-    parted -s ${Disk} mkpart SYSCONF ext4 3000M 3100M || return 1
-    parted -s ${Disk} mkpart USERDATA ext4 3100M 100% || return 1
+    # parted -s ${Disk} mkpart ESP fat32 1M 100M        || return 1
+    # parted -s ${Disk} mkpart STBINFO ext4 100M 200M   || return 1
+    # parted -s ${Disk} mkpart RECOVERY ext4 200M 800M  || return 1
+    # parted -s ${Disk} mkpart ROOT ext4 800M 3000M     || return 1
+    # parted -s ${Disk} mkpart SYSCONF ext4 3000M 3100M || return 1
+    # parted -s ${Disk} mkpart USERDATA ext4 3100M 100% || return 1
+    parted -s ${Disk} mkpart ESP fat32 1M 500M        || return 1
+    parted -s ${Disk} mkpart ROOT ext4 500M 3000M     || return 1
+    parted -s ${Disk} mkpart USERDATA ext4 3000M 100% || return 1
     parted -s ${Disk} set 1 boot on                   || return 1
     parted -s ${Disk} set 1 esp on                    || return 1
 
@@ -1200,32 +1203,35 @@ GenerateFSTAB()
 
     printf "GENFSTAB: Generating ${C_HL}${RootDir}/etc/fstab${C_CLR} ..."
     mkdir -p ${RootDir}/etc
-    cat > ${RootDir}/etc/fstab <<EOF
-# System Entry
-UUID=${RootUUID} /               ext4  noatime,nodiratime,errors=remount-ro  0 1
-UUID=${UefiUUID} /boot/efi       vfat  umask=0077                            0 1
-UUID=${RecoUUID} /boot/recovery  ext4  ro,noatime,nodiratime                 0 1
-UUID=${StbiUUID} /etc/stbinfo    ext4  ro,noatime,nodiratime                 0 1
-UUID=${ConfUUID} /etc/sysconf    ext4  noatime,nodiratime                    0 2
-UUID=${UserUUID} /data           ext4  noatime,nodiratime                    0 2
+    local FSTAB=''
+    FSTAB="${FSTAB:+${FSTAB}\n}# System Entry"
+    [ -n "${RootUUID}" ] && FSTAB="${FSTAB:+${FSTAB}\n}UUID=${RootUUID} /               ext4  noatime,nodiratime,errors=remount-ro  0 1"
+    [ -n "${UefiUUID}" ] && FSTAB="${FSTAB:+${FSTAB}\n}UUID=${UefiUUID} /boot/efi       vfat  umask=0077                            0 1"
+    [ -n "${RecoUUID}" ] && FSTAB="${FSTAB:+${FSTAB}\n}UUID=${RecoUUID} /boot/recovery  ext4  ro,noatime,nodiratime                 0 1"
+    [ -n "${StbiUUID}" ] && FSTAB="${FSTAB:+${FSTAB}\n}UUID=${StbiUUID} /etc/stbinfo    ext4  ro,noatime,nodiratime                 0 1"
+    [ -n "${ConfUUID}" ] && FSTAB="${FSTAB:+${FSTAB}\n}UUID=${ConfUUID} /etc/sysconf    ext4  noatime,nodiratime                    0 2"
+    [ -n "${UserUUID}" ] && FSTAB="${FSTAB:+${FSTAB}\n}UUID=${UserUUID} /data           ext4  noatime,nodiratime                    0 2"
+    [ -n "${UserUUID}" ] && FSTAB="${FSTAB:+${FSTAB}\n}UUID=${UserUUID} /data           ext4  noatime,nodiratime                    0 2"
+    FSTAB="${FSTAB:+${FSTAB}\n}"
+    FSTAB="${FSTAB:+${FSTAB}\n}# User Data Entry"
+    FSTAB="${FSTAB:+${FSTAB}\n}/data/home       /home           none  rw,bind                               0 0"
+    FSTAB="${FSTAB:+${FSTAB}\n}/data/root       /root           none  rw,bind                               0 0"
+    FSTAB="${FSTAB:+${FSTAB}\n}/data/var/log    /var/log        none  rw,bind                               0 0"
+    FSTAB="${FSTAB:+${FSTAB}\n}"
+    echo -e "${FSTAB}" > ${RootDir}/etc/fstab
 
-# User Data Entry
-/data/home       /home           none  rw,bind                               0 0
-/data/root       /root           none  rw,bind                               0 0
-/data/var/log    /var/log        none  rw,bind                               0 0
-EOF
     if [ $? -ne 0 ]; then
         printf " [${C_FL}]\n"
         return 1
     fi
     printf " [${C_OK}]\n"
 
-    echo -e "  ${C_YEL}ESP${C_CLR}      UUID = ${C_BLU}${UefiUUID}${C_CLR}"
-    echo -e "  ${C_YEL}STBINFO${C_CLR}  UUID = ${C_BLU}${StbiUUID}${C_CLR}"
-    echo -e "  ${C_YEL}RECOVERY${C_CLR} UUID = ${C_BLU}${RecoUUID}${C_CLR}"
-    echo -e "  ${C_YEL}ROOT${C_CLR}     UUID = ${C_BLU}${RootUUID}${C_CLR}"
-    echo -e "  ${C_YEL}SYSCONF${C_CLR}  UUID = ${C_BLU}${ConfUUID}${C_CLR}"
-    echo -e "  ${C_YEL}USERDATA${C_CLR} UUID = ${C_BLU}${UserUUID}${C_CLR}"
+    [ -n "${UefiUUID}" ] && echo -e "  ${C_YEL}ESP${C_CLR}      UUID = ${C_BLU}${UefiUUID}${C_CLR}"
+    [ -n "${StbiUUID}" ] && echo -e "  ${C_YEL}STBINFO${C_CLR}  UUID = ${C_BLU}${StbiUUID}${C_CLR}"
+    [ -n "${RecoUUID}" ] && echo -e "  ${C_YEL}RECOVERY${C_CLR} UUID = ${C_BLU}${RecoUUID}${C_CLR}"
+    [ -n "${RootUUID}" ] && echo -e "  ${C_YEL}ROOT${C_CLR}     UUID = ${C_BLU}${RootUUID}${C_CLR}"
+    [ -n "${ConfUUID}" ] && echo -e "  ${C_YEL}SYSCONF${C_CLR}  UUID = ${C_BLU}${ConfUUID}${C_CLR}"
+    [ -n "${UserUUID}" ] && echo -e "  ${C_YEL}USERDATA${C_CLR} UUID = ${C_BLU}${UserUUID}${C_CLR}"
 
     return 0
 }
@@ -1296,10 +1302,11 @@ SetUserPassword()
     local ChPwdScript="/tmp/ChangeUserPassword"
 
     printf "SETPASSWD: Change Password: [${C_HL}${Username}${C_CLR}]:[${C_GEN}${Password}${C_CLR}] ..."
-    cat > ${RootDir}/${ChPwdScript} <<EOF
-#!/bin/bash
-echo ${Username}:${Password} | chpasswd
-EOF
+    local SCRIPT=''
+    SCRIPT="${SCRIPT:+${SCRIPT}\n}#!/bin/bash"
+    SCRIPT="${SCRIPT:+${SCRIPT}\n}echo ${Username}:${Password} | chpasswd"
+    echo -e ${SCRIPT} > ${RootDir}/${ChPwdScript}
+
     if [ $? -ne 0 ]; then
         printf " [${C_FL}]\n"
         return 1
@@ -1485,20 +1492,20 @@ ShowSettings()
 
 Usage()
 {
-    cat <<EOF
-$(basename ${Script}) <Command> <Command> ... (Command Sequence)
-Commands:
-  -a|a|auto        : Auto process all by step.
-  -c|c|create      : Create a virtual disk file.
-  -i|i|init        : Initialize the virtual disk file, if file does not exist, create it.
-  -m|m|mount       : Mount virtual disk to '$(basename ${RootDir})'.
-  -u|u|umount      : Unmount virtual disk from '$(basename ${RootDir})'.
-  -U|U|unpack      : Unpack the base filesystem(default is '$(basename ${RootfsPackage})') to '$(basename ${RootDir})'.
-  -P|P|pre-process : Pre-Process unpacked filesystem, include replace files, gen-locales, ie....
-  -I|I|install     : Install extra packages.
-  -S|S|setup       : Setup settings, include setup bootloader, user password, ie....
-  -z|z|zip         : Compress image to a zip file.
-EOF
+    local USAGE=''
+    USAGE="${USAGE:+${USAGE}\n}$(basename ${Script}) <Command> <Command> ... (Command Sequence)"
+    USAGE="${USAGE:+${USAGE}\n}Commands:"
+    USAGE="${USAGE:+${USAGE}\n}  -a|a|auto        : Auto process all by step."
+    USAGE="${USAGE:+${USAGE}\n}  -c|c|create      : Create a virtual disk file."
+    USAGE="${USAGE:+${USAGE}\n}  -i|i|init        : Initialize the virtual disk file, if file does not exist, create it."
+    USAGE="${USAGE:+${USAGE}\n}  -m|m|mount       : Mount virtual disk to '$(basename ${RootDir})'."
+    USAGE="${USAGE:+${USAGE}\n}  -u|u|umount      : Unmount virtual disk from '$(basename ${RootDir})'."
+    USAGE="${USAGE:+${USAGE}\n}  -U|U|unpack      : Unpack the base filesystem(default is '$(basename ${RootfsPackage})') to '$(basename ${RootDir})'."
+    USAGE="${USAGE:+${USAGE}\n}  -P|P|pre-process : Pre-Process unpacked filesystem, include replace files, gen-locales, ie...."
+    USAGE="${USAGE:+${USAGE}\n}  -I|I|install     : Install extra packages."
+    USAGE="${USAGE:+${USAGE}\n}  -S|S|setup       : Setup settings, include setup bootloader, user password, ie...."
+    USAGE="${USAGE:+${USAGE}\n}  -z|z|zip         : Compress image to a zip file."
+    echo -e ${USAGE}
 }
 
 doInitEnvironment()
@@ -1609,4 +1616,8 @@ doMain()
     done
 }
 
-doMain $@
+if [ $# -lt 1 ]; then
+    doMain --help
+else
+    doMain $@
+fi
