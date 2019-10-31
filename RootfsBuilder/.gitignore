@@ -1,0 +1,13 @@
+/rootfs
+/Cache
+/Profiles/backup
+*.deb
+*.tar
+*.gz
+*.xz
+*.zip
+*.7z
+*.rar
+*.img
+*.swp
+*.log

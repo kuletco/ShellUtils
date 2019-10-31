@@ -125,7 +125,7 @@ IsVirtualDiskLoaded()
     local VirtualDisk=$1
     [ -e ${VirtualDisk} ] || return 1
 
-    if ! kpartx -l ${VirtualDisk} | /bin/grep -q "deleted"; then
+    if ! (kpartx -l ${VirtualDisk} | /bin/grep -q "deleted"); then
         return 0
     else
         return 1
@@ -201,8 +201,8 @@ CreatePartitions()
     parted -s ${Disk} mkpart ROOT ext4 800M 3000M     || return 1
     parted -s ${Disk} mkpart SYSCONF ext4 3000M 3100M || return 1
     parted -s ${Disk} mkpart USERDATA ext4 3100M 100% || return 1
-    parted -s ${Disk} set 2 boot on                   || return 1
-    parted -s ${Disk} set 2 esp on                    || return 1
+    parted -s ${Disk} set 1 boot on                   || return 1
+    parted -s ${Disk} set 1 esp on                    || return 1
 
     return 0
 }
@@ -371,27 +371,32 @@ FormatPartitions()
                     opts="-a"
                     ;;
                 *)
-                    echo -e "FORMAT_ERROR: Unkown format type"
+                    echo -e "FORMAT_ERROR: Unkown filesystem type: ${PartType}"
                     return 1
                     ;;
             esac
         else
             local PartLabel=$(GetDiskPartInfo Label ${Partition})
-            [ -n "${PartLabel}" ] || (echo -e "FORMAT_ERROR: Get Partition Information failed" && return 1)
-            case ${PartLabel} in
-                ESP)
-                    fstype="vfat"
-                    opts="-a"
-                    ;;
-                STBINFO|RECOVERY|ROOT|CONFIG|SYSCONF|DATA|USERDATA)
-                    fstype="ext4"
-                    opts="-q -F"
-                    ;;
-                *)
-                    echo -e "FORMAT_ERROR: Unkown format type"
-                    return 1
-                    ;;
-            esac
+            # [ -n "${PartLabel}" ] || (echo -e "FORMAT_ERROR: Get Partition Information failed" && return 1)
+            if [ -z "${PartLabel}" ]; then
+                echo -e "FORMAT_ERROR: Get Partition Information failed"
+                return 1
+            else
+                case ${PartLabel} in
+                    ESP)
+                        fstype="vfat"
+                        opts="-a"
+                        ;;
+                    STBINFO|RECOVERY|ROOT|CONFIG|SYSCONF|DATA|USERDATA)
+                        fstype="ext4"
+                        opts="-q -F"
+                        ;;
+                    *)
+                        echo -e "FORMAT_ERROR: Unkown partition label: ${PartLabel}"
+                        return 1
+                        ;;
+                esac
+            fi
         fi
         printf "FORMAT: Partition[${C_YEL}${Partition}${C_CLR}] --> [${C_BLU}${fstype}${C_CLR}] ..."
         if ! mkfs.${fstype} ${opts} ${Partition} > /dev/null 2>&1; then
@@ -1005,7 +1010,8 @@ InstallPackages()
     case ${Options} in
         -u|--update|Update|UPDATE)
             printf "PKGINSTALL: ${C_YEL}Updating${C_CLR} Packages List ..."
-            if ! chroot ${RootDir} apt-get ${AptOptions} update >>${InsLogFile} 2>&1; then
+            # if ! chroot ${RootDir} apt-get ${AptOptions} update >>${InsLogFile} 2>&1; then
+            if ! chroot ${RootDir} apt ${AptOptions} update >>${InsLogFile} 2>&1; then
                 printf " [${C_FL}]\n"
                 return 1
             fi
@@ -1013,7 +1019,8 @@ InstallPackages()
         ;;
         -U|--upgrade|Upgrade|UPGRADE)
             printf "PKGINSTALL: ${C_YEL}Upgrading${C_CLR} Packages ..."
-            if ! chroot ${RootDir} apt-get ${AptOptions} upgrade >>${InsLogFile} 2>&1; then
+            # if ! chroot ${RootDir} apt-get ${AptOptions} upgrade >>${InsLogFile} 2>&1; then
+            if ! chroot ${RootDir} apt ${AptOptions} upgrade >>${InsLogFile} 2>&1; then
                 printf " [${C_FL}]\n"
                 return 1
             fi
@@ -1023,7 +1030,8 @@ InstallPackages()
             for Package in ${Packages}
             do
                 printf "PKGINSTALL: ${C_YEL}Installing${C_CLR} ${C_HL}${Package}${C_CLR} ..."
-                if ! chroot ${RootDir} apt-get ${AptOptions} install ${Package} >>${InsLogFile} 2>&1; then
+                # if ! chroot ${RootDir} apt-get ${AptOptions} install ${Package} >>${InsLogFile} 2>&1; then
+                if ! DEBIAN_FRONTEND=noninteractive chroot ${RootDir} apt ${AptOptions} install ${Package} >>${InsLogFile} 2>&1; then
                     printf " [${C_FL}]\n"
                     return 1
                 fi
@@ -1052,21 +1060,27 @@ ReplaceFiles()
     local BackupDir=${ProfilesDir}/backup
     local ModifiedDir=${ProfilesDir}/modified
 
-    for File in ${FileList}
-    do
-        # Backup File
-        if [ -f ${RootDir}/${File} ]; then
-            cp -a ${RootDir}/${File} ${BackupDir} >/dev/null 2>&1
-        fi
-        # Copy File
-        printf "REPLACE: ${C_HL}${File}${C_CLR} ..."
-        if [ -f ${ModifiedDir}/$(basename ${File}) ]; then
-            if ! cp -a ${ModifiedDir}/$(basename ${File}) ${RootDir}/${File} >/dev/null 2>&1; then
-                printf " [${C_FL}]\n"
+    if [ -d "${ProfilesDir}/modified" ]; then
+        for File in ${FileList}
+        do
+            # Backup File
+            mkdir -p ${BackupDir}
+            if [ -f "${RootDir}/${File}" ]; then
+                cp -a "${RootDir}/${File}" "${BackupDir}" >/dev/null 2>&1
             fi
-        fi
-        printf " [${C_OK}]\n"
-    done
+            # Copy File
+            printf "REPLACE: ${C_HL}${File}${C_CLR} ..."
+            FileName=$(basename ${File})
+            if [ -f "${ModifiedDir}/${FileName}" ]; then
+                mkdir -p "$(dirname ${RootDir}/${File})"
+                if ! cp -a "${ModifiedDir}/${FileName}" "${RootDir}/${File}" >/dev/null 2>&1; then
+                    printf " [${C_FL}]\n"
+                else
+                    printf " [${C_OK}]\n"
+                fi
+            fi
+        done
+    fi
 }
 
 # Usage: InstallPreSettings <RootDir> <PreSettingsDir>
@@ -1570,7 +1584,7 @@ doMain()
                 fi
                 GenerateFSTAB ${VDisk} ${RootDir} || exit $?
                 ReplaceFiles ${RootDir} ${ProfilesDir} ${ReplaceFiles} || exit $?
-                doInstallPackages || $?
+                doInstallPackages || exit $?
                 SetUserPassword ${RootDir} ${AccountUsername} ${AccountPassword} || exit $?
                 SetupBootloader ${VDisk} ${RootDir} ${BootloaderID} || exit $?
                 UnLoadVirtualDisk ${VDisk} || exit $?
