@@ -53,7 +53,7 @@ CheckBuildEnvironment()
     for Util in ${Utils}
     do
         if ! which ${Util} >/dev/null 2>&1; then
-            echo "Please install [${C_RED}${Unit}${C_CLR}] first"
+            echo -e "Please install [${C_RED}${Util}${C_CLR}] first"
             return 1
         fi
     done
