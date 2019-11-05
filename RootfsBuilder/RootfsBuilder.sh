@@ -1615,6 +1615,7 @@ doMain()
                 doInstallExtraPackages || exit $?
                 SetUserPassword ${RootDir} ${AccountUsername} ${AccountPassword} || exit $?
                 SetupBootloader ${VDisk} ${RootDir} ${BootloaderID} || exit $?
+                ReplaceFiles ${RootDir} ${ProfilesDir} ${ReplaceFiles} || exit $?
                 UnLoadVirtualDisk ${VDisk} || exit $?
                 ;;
             -z|z|zip)
