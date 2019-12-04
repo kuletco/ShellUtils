@@ -1121,6 +1121,7 @@ InstallExtrenPackages()
 
     local RootDir=$1
     local Packages=$2
+    local InsLogFile=$(pwd)/InsLogFile.log
     [ -d ${RootDir} ] || return 1
     [ -n ${Packages} ] || return 1
 
