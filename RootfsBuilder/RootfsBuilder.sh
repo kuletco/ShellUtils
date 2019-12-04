@@ -160,7 +160,7 @@ LoadVirtualDisk()
 
     if ! IsVirtualDiskLoaded ${VirtualDisk}; then
         printf "LOADING: ${C_HL}${VirtualDisk}${C_CLR}"
-        if kpartx -as ${VirtualDisk}; then
+        if kpartx -a -s ${VirtualDisk}; then
             printf " [${C_OK}]\n"
         else
             printf " [${C_FL}]\n"
@@ -172,6 +172,9 @@ LoadVirtualDisk()
     if [ -n "${LoopDevice}" ]; then
         echo -e " ${C_HL}${VirtualDisk}${C_CLR} --> ${C_YEL}${LoopDevice}${C_CLR}"
         return 0
+    else
+        echo -e "Load Virtual Disk Failed!"
+        return 1
     fi
 }
 
@@ -1616,7 +1619,6 @@ doMain()
                 doInstallExtraPackages || exit $?
                 SetUserPassword ${RootDir} ${AccountUsername} ${AccountPassword} || exit $?
                 SetupBootloader ${VDisk} ${RootDir} ${BootloaderID} || exit $?
-                ReplaceFiles ${RootDir} ${ProfilesDir} ${ReplaceFiles} || exit $?
                 UnLoadVirtualDisk ${VDisk} || exit $?
                 ;;
             -z|z|zip)
