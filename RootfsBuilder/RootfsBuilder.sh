@@ -1132,7 +1132,8 @@ InstallExtrenPackages()
     do
         [ -f "${ExtPackageDir}/${Package}" ] || continue
         printf "PKGINSTALL: ${C_YEL}Installing${C_CLR} ${C_HL}${Package}${C_CLR} ..."
-        DEBIAN_FRONTEND=noninteractive chroot ${RootDir} dpkg ${DpkgOptions} ${ExtPackageDir}/${Package} >>${InsLogFile} 2>&1
+        cp ${ExtPackageDir}/${Package} ${RootDir}/tmp
+        DEBIAN_FRONTEND=noninteractive chroot ${RootDir} dpkg ${DpkgOptions} /tmp/${Package} >>${InsLogFile} 2>&1
         if [ $? -ne 0 ]; then
             DEBIAN_FRONTEND=noninteractive chroot ${RootDir} apt install -f >>${InsLogFile} 2>&1
             if [ $? -ne 0 ]; then
@@ -1144,6 +1145,7 @@ InstallExtrenPackages()
         else
             printf " [${C_OK}]\n"
         fi
+	rm ${RootDir}/tmp/${Package}
     done
 }
 
