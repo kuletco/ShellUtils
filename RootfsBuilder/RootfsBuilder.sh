@@ -1120,13 +1120,15 @@ InstallPreSettings()
 # Usage: InstallExtrenPackages <RootDir> <Packages>
 InstallExtrenPackages()
 {
-    [ $# -eq 2 ] || (echo -e "Usage: InstallExtrenPackages <RootDir> <Packages>" && return 1)
+    [ $# -ge 2 ] || (echo -e "Usage: InstallExtrenPackages <RootDir> <Packages>" && return 1)
 
     local RootDir=$1
-    local Packages=$2
+    shift
+    local Packages=$@
+
     local InsLogFile=$(pwd)/InsLogFile.log
-    [ -d ${RootDir} ] || return 1
-    [ -n ${Packages} ] || return 1
+    [ -d "${RootDir}" ] || return 1
+    [ -n "${Packages}" ] || return 1
 
     local DpkgOptions=""
     DpkgOptions="${DpkgOptions:+${DpkgOptions} }--install"
