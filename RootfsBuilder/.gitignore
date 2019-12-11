@@ -1,6 +1,6 @@
-/rootfs
-/Cache
-/Profiles/backup
+rootfs
+Cache
+Profiles/backup
 *.deb
 *.tar
 *.gz
@@ -11,3 +11,7 @@
 *.img
 *.swp
 *.log
+*.bk
+*.new
+*.log
+*test*

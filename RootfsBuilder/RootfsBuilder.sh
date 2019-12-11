@@ -11,9 +11,13 @@ CacheDir=
 ProfilesDir=
 ExtPackageDir=
 RootfsPackage=
+
+PreReplaceFiles=
+PostReplaceFiles=
+
 Packages=
 PackagesExtra=
-ReplaceFiles=
+PackagesUnInstall=
 
 AptUrl=
 Encoding=
@@ -581,7 +585,7 @@ Mount()
         return 0
     fi
 
-    printf "MOUNT: ${C_GEN}${Options:+[${Options}] }${C_YEL}${Source}${C_CLR} --> ${C_BLU}${RootDir}${DstDir}${C_CLR}"
+    printf "MOUNT: ${C_GEN}${Options:+[${Options}] }${C_YEL}${Source}${C_CLR} --> ${C_BLU}${DstDir}${C_CLR}"
     if ! eval ${Prefix} mount ${Options} ${Source} ${DstDir} >/dev/null 2>&1; then
         printf " [${C_FL}]\n"
         return 1
@@ -997,10 +1001,66 @@ GetConfPackages()
     echo ${Packages}
 }
 
-# Usage: InstallPackages <RootDir> <Option> <Packages...>
+# Usage: ReplaceFiles <RootDir> <ProfilesDir> <Files...>
+ReplaceFiles()
+{
+    [ $# -gt 2 ] || (echo -e "Usage: ReplaceFiles <RootDir> <ProfilesDir> <Files...>" && return 1)
+
+    local RootDir=$1
+    local ProfilesDir=$2
+    shift 2
+    local FileList=$@
+    local BackupDir=${ProfilesDir}/backup
+    local ModifiedDir=${ProfilesDir}/modified
+
+    if [ -d "${ProfilesDir}/modified" ]; then
+        for File in ${FileList}
+        do
+            # Backup File
+            mkdir -p ${BackupDir}
+            if [ -f "${RootDir}/${File}" ]; then
+                cp -a "${RootDir}/${File}" "${BackupDir}" >/dev/null 2>&1
+            fi
+            # Copy File
+            printf "REPLACE: ${C_HL}${File}${C_CLR} ..."
+            FileName=$(basename ${File})
+            if [ -f "${ModifiedDir}/${FileName}" ]; then
+                mkdir -p "$(dirname ${RootDir}/${File})"
+                if ! cp -a "${ModifiedDir}/${FileName}" "${RootDir}/${File}" >/dev/null 2>&1; then
+                    printf " [${C_FL}]\n"
+                else
+                    printf " [${C_OK}]\n"
+                fi
+            fi
+        done
+    fi
+}
+
+# Usage: InstallPreSettings <RootDir> <PreSettingsDir>
+InstallPreSettings()
+{
+    [ $# -eq 2 ] || (echo -e "Usage: InstallPreSettings <RootDir> <PreSettingsDir>" && return 1)
+
+    local RootDir=$1
+    local PreSettingsDir=$2
+    [ -d ${PreSettingsDir} ] || return 1
+    [ -d ${RootDir} ] || return 1
+
+    printf "PRESETTING: Installing Pre-Settings files ..."
+    rsync -aq ${PreSettingsDir}/ ${RootDir}
+    if [ $? -eq 0 ]; then
+        printf "[${C_OK}]\n"
+        return 0
+    else
+        printf "[${C_FL}]\n"
+        return 1
+    fi
+}
+
+# Usage: InstallPackages <RootDir> <Option: Update|Upgrade|Install> <Packages...>
 InstallPackages()
 {
-    [ $# -ge 2 ] || (echo -e "Usage: InstallPackages <RootDir> <Option> <Packages...>" && return 1)
+    [ $# -ge 2 ] || (echo -e "Usage: InstallPackages <RootDir> <Option: Update|Upgrade|Install> <Packages...>" && return 1)
     local RootDir=$1
     local Options=$2
     shift 2
@@ -1061,62 +1121,6 @@ InstallPackages()
     return 0
 }
 
-# Usage: ReplaceFiles <RootDir> <ProfilesDir> <Files...>
-ReplaceFiles()
-{
-    [ $# -gt 2 ] || (echo -e "Usage: ReplaceFiles <RootDir> <ProfilesDir> <Files...>" && return 1)
-
-    local RootDir=$1
-    local ProfilesDir=$2
-    shift 2
-    local FileList=$@
-    local BackupDir=${ProfilesDir}/backup
-    local ModifiedDir=${ProfilesDir}/modified
-
-    if [ -d "${ProfilesDir}/modified" ]; then
-        for File in ${FileList}
-        do
-            # Backup File
-            mkdir -p ${BackupDir}
-            if [ -f "${RootDir}/${File}" ]; then
-                cp -a "${RootDir}/${File}" "${BackupDir}" >/dev/null 2>&1
-            fi
-            # Copy File
-            printf "REPLACE: ${C_HL}${File}${C_CLR} ..."
-            FileName=$(basename ${File})
-            if [ -f "${ModifiedDir}/${FileName}" ]; then
-                mkdir -p "$(dirname ${RootDir}/${File})"
-                if ! cp -a "${ModifiedDir}/${FileName}" "${RootDir}/${File}" >/dev/null 2>&1; then
-                    printf " [${C_FL}]\n"
-                else
-                    printf " [${C_OK}]\n"
-                fi
-            fi
-        done
-    fi
-}
-
-# Usage: InstallPreSettings <RootDir> <PreSettingsDir>
-InstallPreSettings()
-{
-    [ $# -eq 2 ] || (echo -e "Usage: InstallPreSettings <RootDir> <PreSettingsDir>" && return 1)
-
-    local RootDir=$1
-    local PreSettingsDir=$2
-    [ -d ${PreSettingsDir} ] || return 1
-    [ -d ${RootDir} ] || return 1
-
-    printf "PRESETTING: Installing Pre-Settings files ..."
-    rsync -aq ${PreSettingsDir}/ ${RootDir}
-    if [ $? -eq 0 ]; then
-        printf "[${C_OK}]\n"
-        return 0
-    else
-        printf "[${C_FL}]\n"
-        return 1
-    fi
-}
-
 # Usage: InstallExtrenPackages <RootDir> <Packages>
 InstallExtrenPackages()
 {
@@ -1152,6 +1156,60 @@ InstallExtrenPackages()
         fi
 	rm ${RootDir}/tmp/${Package}
     done
+}
+
+# Usage: UnInstallPackages <RootDir> <Option: Remove|Purge> <Packages...>
+UnInstallPackages()
+{
+    [ $# -ge 2 ] || (echo -e "Usage: UnInstallPackages <RootDir> <Option: Remove|Purge> <Packages...>" && return 1)
+    local RootDir=$1
+    local Options=$2
+    shift 2
+    local Packages=$@
+    local LogFile=$(pwd)/LogFile-Package.log
+    local AptOptions=""
+
+    [ -d "${RootDir}" ] || (echo "Cannot find Rootfs dir."; return 1)
+    [ -n "${Packages}" ] || (echo "Please assign at least one package to uninstall."; return 1)
+    [ -f "${LogFile}" ] && rm -f "${LogFile}"
+
+    AptOptions="${AptOptions:+${AptOptions} }--quiet"
+    AptOptions="${AptOptions:+${AptOptions} }--yes"
+    AptOptions="${AptOptions:+${AptOptions} }--allow-change-held-packages"
+    # AptOptions="${AptOptions:+${AptOptions} }--force-yes"
+    # AptOptions="${AptOptions:+${AptOptions} }--no-install-recommends"
+
+    case ${Options} in
+        -r|--remove|remove|Remove|REMOMVE)
+            for Package in ${Packages}
+            do
+                printf "PKGUNINSTALL: ${C_YEL}Removing${C_CLR} ${C_HL}${Package}${C_CLR} ..."
+                if ! DEBIAN_FRONTEND=noninteractive chroot "${RootDir}" apt ${AptOptions} remove ${Package} >>"${LogFile}" 2>&1; then
+                    printf " [${C_FL}]\n"
+                    return 1
+                fi
+                printf " [${C_OK}]\n"
+            done
+            ;;
+        -p|--purge|purge|Purge|PURGE)
+            for Package in ${Packages}
+                do
+                printf "PKGUNINSTALL: ${C_YEL}Purging${C_CLR} ${C_HL}${Package}${C_CLR} ..."
+                if ! DEBIAN_FRONTEND=noninteractive chroot "${RootDir}" apt ${AptOptions} purge ${Package} >>"${LogFile}" 2>&1; then
+                    printf " [${C_FL}]\n"
+                    return 1
+                fi
+                printf " [${C_OK}]\n"
+            done
+            ;;
+        *)
+            echo -e "PKGUNINSTALL: Error: Unknown Options [${Options}]"
+            return 1
+            ;;
+    esac
+
+    rm -f "${LogFile}"
+    return 0
 }
 
 # Usage: GenerateFSTAB <VirtualDisk> <RootDir>
@@ -1492,7 +1550,8 @@ ShowSettings()
     echo -e "CacheDir = ${CacheDir}"
     echo -e "ProfilesDir = ${ProfilesDir}"
     echo -e "RootfsPackage = ${RootfsPackage}"
-    echo -e "ReplaceFiles = ${ReplaceFiles}"
+    echo -e "PreReplaceFiles = ${PreReplaceFiles}"
+    echo -e "PostReplaceFiles = ${PostReplaceFiles}"
     echo -e "AptUrl = ${AptUrl}"
     echo -e "Encoding = ${Encoding}"
     echo -e "Language = ${Language}"
@@ -1502,17 +1561,25 @@ ShowSettings()
     echo -e "AccountPassword = ${AccountPassword}"
 }
 
-doInitEnvironment()
+# Usage: LoadSettings <ConfigFile>
+LoadSettings()
 {
+    [ $# -eq 1 ] || (echo -e "Usage: LoadSettings <ConfigFile>" && return 1)
+    local ConfigFile=$1
+
     VDisk=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings VDisk)
     RootDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings RootDir)
     CacheDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings CacheDir)
     ProfilesDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings ProfilesDir)
     ExtPackageDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings ExtPackageDir)
     RootfsPackage=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings RootfsPackage)
+
+    PreReplaceFiles=$(ConfGetValues ${ConfigFile} PreReplaces)
+    PostReplaceFiles=$(ConfGetValues ${ConfigFile} PostReplaces)
+
     Packages=$(GetConfPackages ${ConfigFile} Packages)
     PackagesExtra=$(GetConfPackages ${ConfigFile} PackagesExtra)
-    ReplaceFiles=$(ConfGetValues ${ConfigFile} Replaces)
+    PackagesUnInstall=$(GetConfPackages ${ConfigFile} PackagesUnInstall)
 
     AptUrl=$(ConfGetValue ${ConfigFile} Settings AptUrl)
     Encoding=$(ConfGetValue ${ConfigFile} Settings Encoding)
@@ -1538,6 +1605,13 @@ doInstallExtraPackages()
     return 0
 }
 
+doRemovePackages()
+{
+    UnInstallPackages "${RootDir}" Purge ${PackagesUnInstall} || return $?
+
+    return 0
+}
+
 Usage()
 {
     local USAGE=''
@@ -1549,10 +1623,11 @@ Usage()
     USAGE="${USAGE:+${USAGE}\n}  -m|m|mount       : Mount virtual disk to '$(basename ${RootDir})'."
     USAGE="${USAGE:+${USAGE}\n}  -u|u|umount      : Unmount virtual disk from '$(basename ${RootDir})'."
     USAGE="${USAGE:+${USAGE}\n}  -U|U|unpack      : Unpack the base filesystem(default is '$(basename ${RootfsPackage})') to '$(basename ${RootDir})'."
-    USAGE="${USAGE:+${USAGE}\n}  -P|P|pre-process : Pre-Process unpacked filesystem, include replace files, gen-locales, ie...."
+    USAGE="${USAGE:+${USAGE}\n}  -P|P|pre-setup   : Pre-Setup settings, include replace files, gen-locales, ie...."
     USAGE="${USAGE:+${USAGE}\n}  -I|I|install     : Install packages."
     USAGE="${USAGE:+${USAGE}\n}  -E|E|instext     : Install extra packages."
-    USAGE="${USAGE:+${USAGE}\n}  -S|S|setup       : Setup settings, include setup bootloader, user password, ie...."
+    USAGE="${USAGE:+${USAGE}\n}  -R|R|remove      : Remove exist packages."
+    USAGE="${USAGE:+${USAGE}\n}  -S|S|post-setup  : Post-Setup settings, include setup bootloader, user password, ie...."
     USAGE="${USAGE:+${USAGE}\n}  -s|show-settings : Show current settings."
     USAGE="${USAGE:+${USAGE}\n}  -z|z|zip         : Compress image to a zip file."
     echo -e ${USAGE}
@@ -1560,7 +1635,7 @@ Usage()
 
 doMain()
 {
-    doInitEnvironment || exit $?
+    LoadSettings ${ConfigFile} || exit $?
     CheckPrivilege || exit $?
     CheckBuildEnvironment || exit $?
 
@@ -1588,10 +1663,10 @@ doMain()
                 shift
                 UnPackRootFS ${RootfsPackage} ${RootDir} || exit $?
                 ;;
-            -P|P|pre-process)
+            -P|P|pre-setup)
                 shift
                 GenerateFSTAB ${VDisk} ${RootDir} || exit $?
-                ReplaceFiles ${RootDir} ${ProfilesDir} ${ReplaceFiles} || exit $?
+                ReplaceFiles ${RootDir} ${ProfilesDir} ${PreReplaceFiles} || exit $?
                 ;;
             -I|I|install)
                 shift
@@ -1601,8 +1676,13 @@ doMain()
                 shift
                 doInstallExtraPackages || exit $?
                 ;;
-            -S|S|setup)
+            -R|R|remove)
                 shift
+                doRemovePackages || exit $?
+                ;;
+            -S|S|post-setup)
+                shift
+                ReplaceFiles ${RootDir} ${ProfilesDir} ${PostReplaceFiles} || exit $?
                 SetUserPassword ${RootDir} ${AccountUsername} ${AccountPassword} || exit $?
                 SetupBootloader ${VDisk} ${RootDir} ${BootloaderID} || exit $?
                 ;;
@@ -1618,12 +1698,13 @@ doMain()
                     exit 1
                 fi
                 GenerateFSTAB ${VDisk} ${RootDir} || exit $?
-                ReplaceFiles ${RootDir} ${ProfilesDir} ${ReplaceFiles} || exit $?
+                ReplaceFiles ${RootDir} ${ProfilesDir} ${PreReplaceFiles} || exit $?
                 doInstallPackages || exit $?
                 doInstallExtraPackages || exit $?
+                doRemovePackages || exit $?
+                ReplaceFiles ${RootDir} ${ProfilesDir} ${PostReplaceFiles} || exit $?
                 SetUserPassword ${RootDir} ${AccountUsername} ${AccountPassword} || exit $?
                 SetupBootloader ${VDisk} ${RootDir} ${BootloaderID} || exit $?
-                ReplaceFiles ${RootDir} ${ProfilesDir} ${ReplaceFiles} || exit $?
                 UnLoadVirtualDisk ${VDisk} || exit $?
                 ;;
             -z|z|zip)

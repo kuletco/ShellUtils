@@ -1,12 +1,16 @@
 #!/bin/bash
 
+WorkDir=$(pwd)
 ScriptDir=$(cd $(dirname ${BASH_SOURCE}); pwd)
 source ${ScriptDir}/Color.sh
 
 # Usage: IsTargetMounted <Target>
 IsTargetMounted()
 {
-    [ $# -eq 1 ] || (echo -e "Usage: IsTargetMounted <Target>" && return 1)
+    if [ $# -ne 1 ]; then
+        echo -e "Usage: IsTargetMounted <Target>"
+        return 1
+    fi
 
     local Target=$1
 
@@ -19,19 +23,25 @@ IsTargetMounted()
     fi
 }
 
-# Usage: GetTargetMountPoint <Device>
+# Usage: GetTargetMountPoint <Target>
 GetTargetMountPoint()
 {
-    [ $# -eq 1 ] || (echo -e "Usage: GetTargetMountPoint <Device>" && return 1)
+    if [ $# -ne 1 ]; then
+        echo -e "Usage: GetTargetMountPoint <Target>"
+        return 1
+    fi
 
-    local Device=$1
-    [ -e ${Device} ] || return 1
+    local Target=$1
+    if [ -e "${Target}" ]; then
+        echo "Target:[${Target}] Not Exist!"
+        return 1
+    fi
 
-    IsTargetMounted ${Device} || return 1
-    local MountedDir=$(lsblk -n -o MOUNTPOINT ${Device})
+    IsTargetMounted "${Target}" || return 1
+    local MountedDir=$(lsblk -n -o MOUNTPOINT "${Target}")
     [ -n "${MountedDir}" ] || return 1
 
-    echo ${MountedDir}
+    echo "${MountedDir}"
 }
 
 # Usage: Mount [-c <RootDir>] [-t <Type> | -b] <Source> <DstDir>
@@ -49,37 +59,40 @@ Mount()
                 RootDir=$2
                 Prefix="${Prefix:+${Prefix} }chroot ${RootDir}"
                 shift 2
-            ;;
+                ;;
             -t|--types)
                 local Type=$2
                 [[ ${Options} =~ "bind" ]] && (echo -e ${Usage} && return 1)
                 Options="${Options:+${Options} }--types $2"
                 shift 2
-            ;;
+                ;;
             -b|--bind)
                 [[ ${Options} =~ "types" ]] && (echo -e ${Usage} && return 1)
                 Options="${Options:+${Options} }--bind"
                 shift
-            ;;
+                ;;
             *)
-                [ $# -eq 2 ] || (echo -e ${Usage} && return 1)
+                if [ $# -ne 2 ]; then
+                    echo -e ${Usage}
+                    return 1
+                fi
                 local Source=$1
                 local DstDir=$2
                 shift 2
-            ;;
+                ;;
         esac
     done
 
-    if [ -z ${Source} -o -z ${DstDir} ]; then
+    if [ -z "${Source}" -o -z "${DstDir}" ]; then
         echo -e ${Usage} && return 1
     fi
 
-    if eval ${Prefix} mountpoint -q ${DstDir}; then
+    if eval ${Prefix} mountpoint -q "${DstDir}"; then
         return 0
     fi
 
-    printf "MOUNT: ${C_GEN}${Options:+[${Options}] }${C_YEL}${Source}${C_CLR} --> ${C_BLU}${RootDir}${DstDir}${C_CLR}"
-    if ! eval ${Prefix} mount ${Options} ${Source} ${DstDir} >/dev/null 2>&1; then
+    printf "MOUNT: ${C_GEN}${Options:+[${Options}] }${C_YEL}${Source##*${WorkDir}/}${C_CLR} --> ${C_BLU}${DstDir##*${WorkDir}/}${C_CLR}"
+    if ! eval ${Prefix} mount ${Options} "${Source}" "${DstDir}" >/dev/null 2>&1; then
         printf " [${C_FL}]\n"
         return 1
     fi
@@ -101,26 +114,29 @@ UnMount()
         case $1 in
             -c|--chroot)
                 RootDir=$2
-                Prefix="${Prefix:+${Prefix} }chroot ${RootDir}"
+                Prefix="${Prefix:+${Prefix} }chroot \"${RootDir}\""
                 shift 2
-            ;;
+                ;;
             *)
-                [ $# -eq 1 ] || (echo -e ${Usage} && return 1)
+                if [ $# -ne 1 ]; then
+                    echo -e ${Usage}
+                    return 1
+                fi
                 Directory=$1
                 shift
-            ;;
+                ;;
         esac
     done
 
-    if [ -z ${Directory} ]; then
+    if [ -z "${Directory}" ]; then
         echo -e ${Usage} && return 1
     fi
 
     if eval ${Prefix} umount --help | grep -q "recursive"; then
-        if eval ${Prefix} mountpoint -q ${Directory}; then
-            printf "UMOUNT: [${C_GEN}Recursive${C_CLR}] ${C_YEL}${Directory}${C_CLR}"
-            if ! eval ${Prefix} umount -R ${Directory} >/dev/null 2>&1; then
-                if ! eval ${Prefix} umount -Rl ${Directory} >/dev/null 2>&1; then
+        if eval ${Prefix} mountpoint -q "${Directory}"; then
+            printf "UMOUNT: [${C_GEN}Recursive${C_CLR}] ${C_YEL}${Directory##*${WorkDir}/}${C_CLR}"
+            if ! eval ${Prefix} umount -R "${Directory}" >/dev/null 2>&1; then
+                if ! eval ${Prefix} umount -Rl "${Directory}" >/dev/null 2>&1; then
                     printf " [${C_FL}]\n"
                     return 1
                 fi
@@ -132,10 +148,10 @@ UnMount()
         [ -n "${dirlist}" ] && return 0
         for dir in ${dirlist}
         do
-            if eval ${Prefix} mountpoint -q ${dir}; then
-                printf "UNMOUNT: ${C_YEL}${dir}${C_CLR}"
-                if ! eval ${Prefix} umount ${dir}; then
-                    if ! eval ${Prefix} umount -l ${dir}; then
+            if eval ${Prefix} mountpoint -q "${dir}"; then
+                printf "UNMOUNT: ${C_YEL}${dir##*${WorkDir}/}${C_CLR}"
+                if ! eval ${Prefix} umount "${dir}"; then
+                    if ! eval ${Prefix} umount -l "${dir}"; then
                         printf " [${C_FL}]\n"
                         return 1
                     fi
@@ -151,7 +167,10 @@ UnMount()
 # Usage: MountCache <RootDir> <CacheDir>
 MountCache()
 {
-    [ $# -eq 2 ] || (echo -e "Usage: MountCache <RootDir> <CacheDir>" && return 1)
+    if [ $# -ne 2 ]; then
+        echo -e "Usage: MountCache <RootDir> <CacheDir>"
+        return 1
+    fi
 
     local RootDir=$1
     local CacheDir=$2
@@ -159,7 +178,6 @@ MountCache()
     local RootAptLists=${RootDir}/var/lib/apt/lists
     local CacheAptCache=${CacheDir}/aptcache
     local CacheAptLists=${CacheDir}/aptlists
-    [ -n "${RootDir}" ] || return 1
 
     mkdir -p ${CacheAptCache} ${CacheAptLists} ${RootAptCache} ${RootAptLists} || return 1
 
@@ -172,12 +190,14 @@ MountCache()
 # Usage: UnMountCache <RootDir>
 UnMountCache()
 {
-    [ $# -eq 1 ] || (echo -e "Usage: UnMountCache <RootDir>" && return 1)
+    if [ $# -ne 1 ]; then
+        echo -e "Usage: UnMountCache <RootDir>"
+        return 1
+    fi
 
     local RootDir=$1
     local RootAptCache=${RootDir}/var/cache/apt
     local RootAptLists=${RootDir}/var/lib/apt/lists
-    [ -n "${RootDir}" ] || return 1
 
     for dir in ${RootAptCache} ${RootAptLists}
     do
@@ -190,10 +210,12 @@ UnMountCache()
 # Usage: MountSystemEntries <RootDir>
 MountSystemEntries()
 {
-    [ $# -eq 1 ] || (echo -e "Usage: MountSystemEntries <RootDir>" && return 1)
+    if [ $# -ne 1 ]; then
+        echo -e "Usage: MountSystemEntries <RootDir>"
+        return 1
+    fi
 
     local RootDir=$1
-    [ -n "${RootDir}" ] || return 1
 
     mkdir -p ${RootDir}/proc ${RootDir}/sys ${RootDir}/dev ${RootDir}/run ${RootDir}/tmp || return 1
 
@@ -216,11 +238,13 @@ MountSystemEntries()
 # Usage: UnMountSystemEntries <RootDir>
 UnMountSystemEntries()
 {
-    [ $# -eq 1 ] || (echo -e "Usage: MountSystemEntries <RootDir>" && return 1)
+    if [ $# -ne 1 ]; then
+        echo -e "Usage: MountSystemEntries <RootDir>"
+        return 1
+    fi
 
     local RootDir=$1
     local Prefix=""
-    [ -n "${RootDir}" ] || return 1
 
     [ -x ${RootDir}/bin/mountpoint ] && Prefix="chroot ${RootDir}"
 
@@ -239,11 +263,13 @@ UnMountSystemEntries()
 # Usage: MountUserEntries <RootDir>
 MountUserEntries()
 {
-    [ $# -eq 1 ] || (echo -e "Usage: MountUserEntries <RootDir>" && return 1)
+    if [ $# -ne 1 ]; then
+        echo -e "Usage: MountUserEntries <RootDir>"
+        return 1
+    fi
 
     local RootDir=$1
     local UserDir=${RootDir}/data
-    [ -n "${RootDir}" ] || return 1
 
     for dir in home root var/log
     do
@@ -261,10 +287,12 @@ MountUserEntries()
 # Usage: UnMountUserEntries <RootDir>
 UnMountUserEntries()
 {
-    [ $# -eq 1 ] || (echo -e "Usage: UnMountUserEntries <RootDir>" && return 1)
+    if [ $# -ne 1 ]; then
+        echo -e "Usage: UnMountUserEntries <RootDir>"
+        return 1
+    fi
 
     local RootDir=$1
-    [ -n "${RootDir}" ] || return 1
 
     # Mount ExtraPackage to rootfs/media
     UnMount ${RootDir}/media

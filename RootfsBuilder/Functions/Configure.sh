@@ -6,9 +6,16 @@ CacheDir=
 ProfilesDir=
 ExtPackageDir=
 RootfsPackage=
+
+PreCopyFiles=
+PostCopyFiles=
+
+PreReplaceFiles=
+PostReplaceFiles=
+
 Packages=
 PackagesExtra=
-ReplaceFiles=
+PackagesUnInstall=
 
 AptUrl=
 Encoding=
@@ -21,7 +28,10 @@ AccountPassword=
 # USAGE: ConfGetSections <ConfFile>
 ConfGetSections()
 {
-    [ $# -eq 1 ] || (echo -e "Usage: ConfGetSections <ConfFile>" && return 1)
+    if [ $# -ne 1 ]; then
+        echo -e "Usage: ConfGetSections <ConfFile>"
+        return 1
+    fi
 
     local ConfFile=$1
     sed -n "/\[*\]/{s/\[//;s/\]///^;.*$/d;/^#.*$/d;p}" ${ConfFile}
@@ -30,7 +40,10 @@ ConfGetSections()
 # USAGE: ConfGetKeys <ConfFile> <Section>
 ConfGetKeys()
 {
-    [ $# -eq 2 ] || (echo -e "Usage: ConfGetKeys <ConfFile> <Section>" && return 1)
+    if [ $# -ne 2 ]; then
+        echo -e "Usage: ConfGetKeys <ConfFile> <Section>"
+        return 1
+    fi
 
     local ConfFile=$1
     local Section=$2
@@ -41,7 +54,10 @@ ConfGetKeys()
 # USAGE: ConfGetValues <ConfFile> <Section>
 ConfGetValues()
 {
-    [ $# -eq 2 ] || (echo -e "Usage: ConfGetValues <ConfFile> <Section>" && return 1)
+    if [ $# -ne 2 ]; then
+        echo -e "Usage: ConfGetValues <ConfFile> <Section>"
+        return 1
+    fi
 
     local ConfFile=$1
     local Section=$2
@@ -52,7 +68,10 @@ ConfGetValues()
 # USAGE: ConfGetValue <ConfFile> <Section> <Key>
 ConfGetValue()
 {
-    [ $# -eq 3 ] || (echo -e "Usage: ConfGetValue <ConfFile> <Section> <Key>" && return 1)
+    if [ $# -ne 3 ]; then
+        echo -e "Usage: ConfGetValue <ConfFile> <Section> <Key>"
+        return 1
+    fi
 
     local ConfFile=$1
     local Section=$2
@@ -64,7 +83,10 @@ ConfGetValue()
 # USAGE: ConfSetValue <ConfFile> <Section> <Key> <Value>
 ConfSetValue()
 {
-    [ $# -eq 4 ] || (echo -e "Usage: ConfGetValue <ConfFile> <Section> <Key>" && return 1)
+    if [ $# -ne 4 ]; then
+        echo -e "Usage: ConfSetValue <ConfFile> <Section> <Key> <Value>"
+        return 1
+    fi
 
     local ConfFile=$1
     local Section=$2
@@ -77,24 +99,25 @@ ConfSetValue()
 # Usage: GetConfPackages <ConfigFile> <Section>
 GetConfPackages()
 {
-    [ $# -eq 2 ] || (echo -e "Usage: GetConfPackages <ConfigFile> <Section>" && return 1)
+    if [ $# -ne 2 ]; then
+        echo -e "Usage: GetConfPackages <ConfigFile> <Section>"
+        return 1
+    fi
+
     local ConfigFile=$1
     local Section=$2
-    local PKGs=""
-
-    [ -n "${ConfigFile}" ] || return 1
-    [ -f "${ConfigFile}" ] || return 1
+    local Packages=""
 
     local PackagesList=$(ConfGetKeys ${ConfigFile} ${Section})
     [ -n "${PackagesList}" ] || return 1
 
-    for PKG in ${PackagesList}
+    for Package in ${PackagesList}
     do
-        local Enabled=$(ConfGetValue ${ConfigFile} ${Section} ${PKG})
+        local Enabled=$(ConfGetValue ${ConfigFile} ${Section} ${Package})
         if [ -n "${Enabled}" ]; then
             case ${Enabled} in
                 y|Y|yes|YES|Yes)
-                    PKGs=${PKGs:+${PKGs} }${PKG}
+                    Packages=${Packages:+${Packages} }${Package}
                     ;;
                 *)
                     ;;
@@ -102,11 +125,11 @@ GetConfPackages()
         fi
     done
 
-    if [ -z "${PKGs}" ]; then
+    if [ -z "${Packages}" ]; then
         return 1
     fi
 
-    echo ${PKGs}
+    echo ${Packages}
 }
 
 # Usage: GetConfPackages
@@ -118,7 +141,8 @@ ShowSettings()
     echo -e "CacheDir = ${CacheDir}"
     echo -e "ProfilesDir = ${ProfilesDir}"
     echo -e "RootfsPackage = ${RootfsPackage}"
-    echo -e "ReplaceFiles = ${ReplaceFiles}"
+    echo -e "PreReplaceFiles = ${PreReplaceFiles}"
+    echo -e "PostReplaceFiles = ${PostReplaceFiles}"
     echo -e "AptUrl = ${AptUrl}"
     echo -e "Encoding = ${Encoding}"
     echo -e "Language = ${Language}"
@@ -131,7 +155,11 @@ ShowSettings()
 # Usage: LoadSettings <ConfigFile>
 LoadSettings()
 {
-    [ $# -eq 1 ] || (echo -e "Usage: LoadSettings <ConfigFile>" && return 1)
+    if [ $# -ne 1 ]; then
+        echo -e "Usage: LoadSettings <ConfigFile>"
+        return 1
+    fi
+
     local ConfigFile=$1
 
     SquashfsFile=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings SquashfsFile)
@@ -141,9 +169,16 @@ LoadSettings()
     ProfilesDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings ProfilesDir)
     ExtPackageDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings ExtPackageDir)
     RootfsPackage=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings RootfsPackage)
+
+    PreCopyFiles=$(ConfGetValues ${ConfigFile} PreCopy)
+    PostCopyFiles=$(ConfGetValues ${ConfigFile} PostCopy)
+
+    PreReplaceFiles=$(ConfGetValues ${ConfigFile} PreReplaces)
+    PostReplaceFiles=$(ConfGetValues ${ConfigFile} PostReplaces)
+
     Packages=$(GetConfPackages ${ConfigFile} Packages)
     PackagesExtra=$(GetConfPackages ${ConfigFile} PackagesExtra)
-    ReplaceFiles=$(ConfGetValues ${ConfigFile} Replaces)
+    PackagesUnInstall=$(GetConfPackages ${ConfigFile} PackagesUnInstall)
 
     AptUrl=$(ConfGetValue ${ConfigFile} Settings AptUrl)
     Encoding=$(ConfGetValue ${ConfigFile} Settings Encoding)

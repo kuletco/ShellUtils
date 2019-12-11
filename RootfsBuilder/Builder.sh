@@ -20,50 +20,63 @@ source ${FunctionsDir}/Packages.sh
 # Usage: MountChroot <RootDir> <CacheDir>
 doMountChroot()
 {
-    [ $# -eq 2 ] || (echo -e "Usage: MountChroot <RootDir> <CacheDir>" && return 1)
+    if [ $# -ne 2 ]; then
+        echo -e "Usage: MountChroot <RootDir> <CacheDir>"
+        return 1
+    fi
 
     local RootDir=$1
     local CacheDir=$2
 
-    local SysLogDir=${RootDir}/var/log
-    local SysLogSaveDir=${UserDataDir}/var/log
+    local SysLogDir="${RootDir}/var/log"
+    local SysLogSaveDir="${UserDataDir}/var/log"
 
-    mkdir -p ${SysLogDir} ${SysLogSaveDir}
-    Mount --bind ${SysLogSaveDir} ${SysLogDir} || return 1
+    mkdir -p "${SysLogDir}" "${SysLogSaveDir}"
+    Mount --bind "${SysLogSaveDir}" "${SysLogDir}" || return 1
 
-    MountCache ${RootDir} ${CacheDir} || return ?
-    MountSystemEntries ${RootDir} || return $?
-    MountUserEntries ${RootDir} || return $?
+    MountCache "${RootDir}" "${CacheDir}" || return ?
+    MountSystemEntries "${RootDir}" || return $?
+    MountUserEntries "${RootDir}" || return $?
 }
 
 # Usage: UnMountChroot <RootDir>
 doUnMountChroot()
 {
-    [ $# -eq 1 ] || (echo -e "Usage: UnMountChroot <RootDir>" && return 1)
+    if [ $# -ne 1 ]; then
+        echo -e "Usage: UnMountChroot <RootDir>"
+        return 1
+    fi
 
     local RootDir=$1
 
-    UnMountCache ${RootDir} || return 1
-    UnMountUserEntries ${RootDir} || return 1
-    UnMountSystemEntries ${RootDir} || return 1
+    UnMountCache "${RootDir}" || return 1
+    UnMountUserEntries "${RootDir}" || return 1
+    UnMountSystemEntries "${RootDir}" || return 1
 
-    UnMount ${RootDir} || return 1
+    UnMount "${RootDir}" || return 1
 
     return 0
 }
 
 doInstallPackages()
 {
-    InstallPackages ${RootDir} Update || return $?
-    InstallPackages ${RootDir} Upgrade || return $?
-    InstallPackages ${RootDir} Install ${Packages} || return $?
+    InstallPackages "${RootDir}" Update || return $?
+    InstallPackages "${RootDir}" Upgrade || return $?
+    InstallPackages "${RootDir}" Install ${Packages} || return $?
 
     return 0
 }
 
 doInstallExtraPackages()
 {
-    InstallExtrenPackages ${RootDir} ${PackagesExtra} || return $?
+    InstallExtrenPackages "${RootDir}" ${PackagesExtra} || return $?
+
+    return 0
+}
+
+doRemovePackages()
+{
+    UnInstallPackages "${RootDir}" Purge ${PackagesUnInstall} || return $?
 
     return 0
 }
@@ -73,14 +86,15 @@ Usage()
     local USAGE=''
     USAGE="${USAGE:+${USAGE}\n}$(basename $0) <Command> <Command> ... (Command Sequence)"
     USAGE="${USAGE:+${USAGE}\n}Commands:"
-    USAGE="${USAGE:+${USAGE}\n}  -a|a|auto        : Auto process all by step."
+    USAGE="${USAGE:+${USAGE}\n}  -a|a|auto        : Auto process all by step [default: empiIrPuZ]."
+    USAGE="${USAGE:+${USAGE}\n}  -e|e|expand      : Uncompress the base filesystem(default is '$(basename ${RootfsPackage})') to '$(basename ${RootDir})'."
     USAGE="${USAGE:+${USAGE}\n}  -m|m|mount       : Mount 'chroot' env to '$(basename ${RootDir})'."
     USAGE="${USAGE:+${USAGE}\n}  -u|u|umount      : Unmount 'chroot' env from '$(basename ${RootDir})'."
-    USAGE="${USAGE:+${USAGE}\n}  -U|U|unpack      : Unpack the base filesystem(default is '$(basename ${RootfsPackage})') to '$(basename ${RootDir})'."
-    USAGE="${USAGE:+${USAGE}\n}  -P|P|pre-process : Pre-Process unpacked filesystem, include replace files, gen-locales, ie...."
-    USAGE="${USAGE:+${USAGE}\n}  -I|I|install     : Install packages."
-    USAGE="${USAGE:+${USAGE}\n}  -E|E|instext     : Install extra packages."
-    USAGE="${USAGE:+${USAGE}\n}  -S|S|setup       : Setup settings, include user password, ie...."
+    USAGE="${USAGE:+${USAGE}\n}  -i|i|install     : Install packages."
+    USAGE="${USAGE:+${USAGE}\n}  -I|I|instext     : Install extra packages."
+    USAGE="${USAGE:+${USAGE}\n}  -r|r|remove      : Remove exist packages."
+    USAGE="${USAGE:+${USAGE}\n}  -p|p|pre-setup   : Pre-Setup settings, include replace files, gen-locales, ie...."
+    USAGE="${USAGE:+${USAGE}\n}  -P|P|post-setup  : Post-Setup settings, include user password, ie...."
     USAGE="${USAGE:+${USAGE}\n}  -Z|Z|mksquashfs  : Make a SquashFS image contain the RootFS."
     USAGE="${USAGE:+${USAGE}\n}  -s|show-settings : Show current settings."
     echo -e ${USAGE}
@@ -97,60 +111,78 @@ doMain()
             -m|m|mount)
                 shift
                 CheckPrivilege || exit $?
-                doMountChroot ${RootDir} ${CacheDir} || exit $?
+                doMountChroot "${RootDir}" "${CacheDir}" || exit $?
                 ;;
             -u|u|umount|uload)
                 shift
                 CheckPrivilege || exit $?
-                doUnMountChroot ${RootDir} || exit $?
+                doUnMountChroot "${RootDir}" || exit $?
                 ;;
-            -U|U|unpack)
+            -e|e|expand)
                 shift
                 CheckPrivilege || exit $?
-                UnPackRootFS ${RootfsPackage} ${RootDir} || exit $?
+                UnPackRootFS "${RootfsPackage}" "${RootDir}" || exit $?
                 ;;
-            -P|P|pre-process)
+            -p|p|pre-setup)
                 shift
                 CheckPrivilege || exit $?
-                GenerateFSTAB ${RootDir} || exit $?
-                ReplaceFiles ${RootDir} ${ProfilesDir} ${ReplaceFiles} || exit $?
+                GenerateFSTAB "${RootDir}" || exit $?
+                ReplaceFiles "${RootDir}" "${ProfilesDir}" ${PreReplaceFiles} || exit $?
                 ;;
-            -I|I|install)
+            -i|i|install)
                 shift
                 CheckPrivilege || exit $?
                 doInstallPackages || exit $?
                 ;;
-            -E|E|instext)
+            -I|I|instext)
                 shift
                 CheckPrivilege || exit $?
                 doInstallExtraPackages || exit $?
                 ;;
-            -S|S|setup)
+            -r|r|remove)
                 shift
                 CheckPrivilege || exit $?
-                SetUserPassword ${RootDir} ${AccountUsername} ${AccountPassword} || exit $?
-                ClearRootFS ${RootDir} || exit $?
+                doRemovePackages || exit $?
+                ;;
+            -P|P|post-setup)
+                shift
+                CheckPrivilege || exit $?
+                ReplaceFiles "${RootDir}" "${ProfilesDir}" ${PostReplaceFiles} || exit $?
+                SetUserPassword "${RootDir}" ${AccountUsername} ${AccountPassword} || exit $?
+                ClearRootFS "${RootDir}" || exit $?
                 ;;
             -Z|Z|mksquashfs)
                 shift
                 CheckPrivilege || exit $?
-                ClearRootFS ${RootDir} || exit $?
-                MakeSquashfs ${SquashfsFile} ${RootDir} || exit $?
+                doUnMountChroot "${RootDir}" || exit $?
+                MakeSquashfs "${SquashfsFile}" "${RootDir}" || exit $?
                 ;;
             -a|a|auto)
                 shift
                 CheckPrivilege || exit $?
-                UnPackRootFS ${RootfsPackage} ${RootDir} || exit $?
-                doMountChroot ${RootDir} ${CacheDir} || exit $?
-                GenerateFSTAB ${RootDir} || exit $?
-                ReplaceFiles ${RootDir} ${ProfilesDir} ${ReplaceFiles} || exit $?
+                # expand
+                UnPackRootFS "${RootfsPackage}" "${RootDir}" || exit $?
+                # mount
+                doMountChroot "${RootDir}" "${CacheDir}" || exit $?
+                # pre-setup
+                GenerateFSTAB "${RootDir}" || exit $?
+                CopyFiles "${RootDir}" "${ProfilesDir}" ${PreCopyFiles} || exit $?
+                ReplaceFiles "${RootDir}" "${ProfilesDir}" ${PreReplaceFiles} || exit $?
+                # install
                 doInstallPackages || exit $?
+                # instext
                 doInstallExtraPackages || exit $?
-                ReplaceFiles ${RootDir} ${ProfilesDir} ${ReplaceFiles} || exit $?
-                SetUserPassword ${RootDir} ${AccountUsername} ${AccountPassword} || exit $?
-                ClearRootFS ${RootDir} || exit $?
-                doUnMountChroot ${RootDir} || exit $?
-                MakeSquashfs ${SquashfsFile} ${RootDir} || exit $?
+                # remove
+                doRemovePackages || exit $?
+                # post-setup
+                CopyFiles "${RootDir}" "${ProfilesDir}" ${PostCopyFiles} || exit $?
+                ReplaceFiles "${RootDir}" "${ProfilesDir}" ${PostReplaceFiles} || exit $?
+                SetUserPassword "${RootDir}" ${AccountUsername} ${AccountPassword} || exit $?
+                ClearRootFS "${RootDir}" || exit $?
+                # umount
+                doUnMountChroot "${RootDir}" || exit $?
+                # mksquashfs
+                MakeSquashfs "${SquashfsFile}" "${RootDir}" || exit $?
                 ;;
             -s|show-settings)
                 shift
