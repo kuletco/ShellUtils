@@ -32,7 +32,7 @@ MakeSquashfs()
     local RootDir=$2
 
     printf "PACK: ${C_HL}${RootDir}${C_CLR} --> ${C_BLU}${Squashfs}${C_CLR} ..."
-    if ! mksquashfs ${RootDir} ${Squashfs} >>/dev/null 2>&1; then
+    if ! mksquashfs ${RootDir} ${Squashfs} -comp xz -processors 4 >>/dev/null 2>&1; then
         printf " [${C_FL}]\n"
         return 1
     else

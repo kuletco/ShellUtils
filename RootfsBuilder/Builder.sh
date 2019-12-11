@@ -147,9 +147,10 @@ doMain()
                 ReplaceFiles ${RootDir} ${ProfilesDir} ${ReplaceFiles} || exit $?
                 doInstallPackages || exit $?
                 doInstallExtraPackages || exit $?
+                ReplaceFiles ${RootDir} ${ProfilesDir} ${ReplaceFiles} || exit $?
                 SetUserPassword ${RootDir} ${AccountUsername} ${AccountPassword} || exit $?
                 ClearRootFS ${RootDir} || exit $?
-                doUnMountVirtualDisk ${RootDir} || exit $?
+                doUnMountChroot ${RootDir} || exit $?
                 MakeSquashfs ${SquashfsFile} ${RootDir} || exit $?
                 ;;
             -s|show-settings)
