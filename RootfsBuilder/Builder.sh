@@ -129,7 +129,6 @@ doMain()
                 shift
                 CheckPrivilege || exit $?
                 SetUserPassword ${RootDir} ${AccountUsername} ${AccountPassword} || exit $?
-
                 ClearRootFS ${RootDir} || exit $?
                 ;;
             -Z|Z|mksquashfs)

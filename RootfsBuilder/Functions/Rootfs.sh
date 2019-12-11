@@ -138,16 +138,10 @@ GenerateLocales()
     return 0
 }
 
-# Usage: GenerateSourcesList <RootDir> <AptUrl>
-GenerateSourcesList()
-{
-    local CODENAME=$(chroot ${RootDir} lsb_release -s -c)
-}
-
+# Usage: SetUserPassword <RootDir> <Username> <Password>
 SetUserPassword()
 {
     [ $# -eq 3 ] || (echo -e "Usage: SetUserPassword <RootDir> <Username> <Password>" && return 1)
-
     local RootDir=$1
     local Username=$2
     local Password=$3
@@ -156,7 +150,7 @@ SetUserPassword()
     [ -n "${Username}" ] || return 1
     [ -n "${Password}" ] || return 1
 
-    IsTargetMounted ${RootDir} || return 1
+    [ -f "${RootDir}/etc/passwd" ] || return 1
 
     if ! /bin/grep -q ${Username} ${RootDir}/etc/passwd; then
         printf "SETPASSWD: Adding User: ${C_HL}${Username}${C_CLR} ..."
