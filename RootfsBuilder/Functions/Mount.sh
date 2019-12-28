@@ -62,13 +62,15 @@ Mount()
                 ;;
             -t|--types)
                 local Type=$2
-                [[ ${Options} =~ "bind" ]] && (echo -e ${Usage} && return 1)
                 Options="${Options:+${Options} }--types $2"
                 shift 2
                 ;;
             -b|--bind)
-                [[ ${Options} =~ "types" ]] && (echo -e ${Usage} && return 1)
                 Options="${Options:+${Options} }--bind"
+                shift
+                ;;
+            -ro|--readonly)
+                Options="${Options:+${Options} }--options ro"
                 shift
                 ;;
             *)
@@ -217,7 +219,7 @@ MountSystemEntries()
 
     local RootDir=$1
 
-    mkdir -p ${RootDir}/proc ${RootDir}/sys ${RootDir}/dev ${RootDir}/run ${RootDir}/tmp || return 1
+    mkdir -p ${RootDir}/proc ${RootDir}/sys ${RootDir}/dev ${RootDir}/run ${RootDir}/tmp ${RootDir}/host || return 1
 
     if [ -x ${RootDir}/bin/mount ]; then
         Mount --chroot ${RootDir} --types proc proc /proc
@@ -227,6 +229,7 @@ MountSystemEntries()
         Mount --chroot ${RootDir} --types devpts devpts /dev/pts
         Mount --bind /run ${RootDir}/run
         Mount --bind /tmp ${RootDir}/tmp
+        Mount --readonly --bind / ${RootDir}/host
     else
         echo -e "MOUNT: ${C_WARN} Please unpack rootfs package first."
         return 99
@@ -248,7 +251,7 @@ UnMountSystemEntries()
 
     [ -x ${RootDir}/bin/mountpoint ] && Prefix="chroot ${RootDir}"
 
-    for dir in tmp run dev/pts dev sys proc
+    for dir in host tmp run dev/pts dev sys proc
     do
         if eval ${Prefix} mountpoint -q ${RootDir}/proc; then
             UnMount --chroot ${RootDir} ${dir} || return 1
@@ -256,6 +259,8 @@ UnMountSystemEntries()
             UnMount ${RootDir}/${dir} || return 1
         fi
     done
+
+    rm -rf ${RootDir}/host
 
     return 0
 }
@@ -278,8 +283,8 @@ MountUserEntries()
     done
 
     # Mount ExtraPackage to rootfs/media
-    mkdir -p ${RootDir}/media
-    Mount --bind ${ExtPackageDir} ${RootDir}/media
+    mkdir -p ${RootDir}/media/PackagesExtra ${ExtPackageDir}
+    Mount --bind ${ExtPackageDir} ${RootDir}/media/PackagesExtra
 
     return 0
 }
@@ -295,7 +300,8 @@ UnMountUserEntries()
     local RootDir=$1
 
     # Mount ExtraPackage to rootfs/media
-    UnMount ${RootDir}/media
+    UnMount ${RootDir}/media/PackagesExtra
+    rm -rf ${RootDir}/media/PackagesExtra
 
     for dir in home root var/log
     do
