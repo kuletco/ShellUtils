@@ -43,7 +43,7 @@ InstallPackages()
             ;;
         -U|--upgrade|upgrade|Upgrade|UPGRADE)
             printf "PKGINSTALL: ${C_YEL}Upgrading${C_CLR} Packages ..."
-            if ! chroot ${RootDir} apt ${AptOptions} upgrade >>${LogFile} 2>&1; then
+            if ! DEBIAN_FRONTEND=noninteractive chroot ${RootDir} apt ${AptOptions} upgrade >>${LogFile} 2>&1; then
                 printf " [${C_FL}]\n"
                 return 1
             fi
@@ -103,7 +103,7 @@ InstallExtrenPackages()
     do
         [ -f "${ExtPackageDir}/${Package}" ] || continue
         printf "PKGINSTALL: ${C_YEL}Installing${C_CLR} ${C_HL}${Package}${C_CLR} ..."
-        DEBIAN_FRONTEND=noninteractive chroot "${RootDir}" dpkg ${DpkgOptions} /media/${Package} >>"${LogFile}" 2>&1
+        DEBIAN_FRONTEND=noninteractive chroot "${RootDir}" dpkg ${DpkgOptions} /media/PackagesExtra/${Package} >>"${LogFile}" 2>&1
         if [ $? -ne 0 ]; then
             DEBIAN_FRONTEND=noninteractive chroot "${RootDir}" apt install -f >>"${LogFile}" 2>&1
             if [ $? -ne 0 ]; then
