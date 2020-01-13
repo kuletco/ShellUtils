@@ -6,9 +6,17 @@ RequiredUtils="mount dmsetup losetup blkid lsblk parted mkfs.ext4 mkfs.fat mksqu
 WorkDir=$(pwd)
 ScriptDir=$(cd $(dirname ${BASH_SOURCE}); pwd)
 FunctionsDir=${ScriptDir}/Functions
-ConfigFile=${WorkDir}/settings.conf
-[ -d ${FunctionsDir} ] || (echo "Error: Cannot find 'Functions' in the script folder." && return 1)
-[ -f ${ConfigFile} ] || (echo "Error: Cannot find 'settings.conf' in the current folder." && return 1)
+ConfigFile=${ScriptDir}/settings.conf
+
+if [ ! -d ${FunctionsDir} ]; then
+    echo "Error: Cannot find 'Functions' in the script folder."
+    exit 1
+fi
+
+if [ ! -f ${ConfigFile} ]; then
+    echo "Error: Cannot find 'settings.conf' in the current folder."
+    exit 1
+fi
 
 source ${FunctionsDir}/Color.sh
 source ${FunctionsDir}/Base.sh
@@ -87,7 +95,7 @@ Usage()
     USAGE="${USAGE:+${USAGE}\n}$(basename $0) <Command> <Command> ... (Command Sequence)"
     USAGE="${USAGE:+${USAGE}\n}Commands:"
     USAGE="${USAGE:+${USAGE}\n}  -a|a|auto        : Auto process all by step [default: empiIrPuZ]."
-    USAGE="${USAGE:+${USAGE}\n}  -e|e|expand      : Uncompress the base filesystem(default is '$(basename ${RootfsPackage})') to '$(basename ${RootDir})'."
+    USAGE="${USAGE:+${USAGE}\n}  -e|e|expand      : Uncompress the base filesystem(default is '$(basename ${RootfsBasePackage})') to '$(basename ${RootDir})'."
     USAGE="${USAGE:+${USAGE}\n}  -m|m|mount       : Mount 'chroot' env to '$(basename ${RootDir})'."
     USAGE="${USAGE:+${USAGE}\n}  -u|u|umount      : Unmount 'chroot' env from '$(basename ${RootDir})'."
     USAGE="${USAGE:+${USAGE}\n}  -i|i|install     : Install packages."
@@ -121,7 +129,7 @@ doMain()
             -e|e|expand)
                 shift
                 CheckPrivilege || exit $?
-                UnPackRootFS "${RootfsPackage}" "${RootDir}" || exit $?
+                UnPackRootFS "${RootfsBasePackage}" "${RootDir}" || exit $?
                 ;;
             -p|p|pre-setup)
                 shift
@@ -161,7 +169,7 @@ doMain()
                 shift
                 CheckPrivilege || exit $?
                 # expand
-                UnPackRootFS "${RootfsPackage}" "${RootDir}" || exit $?
+                UnPackRootFS "${RootfsBasePackage}" "${RootDir}" || exit $?
                 # mount
                 doMountChroot "${RootDir}" "${CacheDir}" || exit $?
                 # pre-setup

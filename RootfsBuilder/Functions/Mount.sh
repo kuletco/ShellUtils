@@ -1,8 +1,10 @@
 #!/bin/bash
 
-WorkDir=$(pwd)
-ScriptDir=$(cd $(dirname ${BASH_SOURCE}); pwd)
-source ${ScriptDir}/Color.sh
+[ -n "${ScriptDir}" ] || ScriptDir=$(cd $(dirname ${BASH_SOURCE}); pwd)
+[ -n "${FunctionsDir}" ] || FunctionsDir=${ScriptDir}/Functions
+[ -n "${WorkDir}" ] || WorkDir=$(pwd)
+
+source ${FunctionsDir}/Color.sh
 
 # Usage: IsTargetMounted <Target>
 IsTargetMounted()

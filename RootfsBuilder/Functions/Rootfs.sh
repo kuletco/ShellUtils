@@ -1,10 +1,11 @@
 #!/bin/bash
 
-WorkDir=$(pwd)
-ScriptDir=$(cd $(dirname ${BASH_SOURCE}); pwd)
-source ${ScriptDir}/Color.sh
-source ${ScriptDir}/Mount.sh
-source ${ScriptDir}/Configure.sh
+[ -n "${ScriptDir}" ] || ScriptDir=$(cd $(dirname ${BASH_SOURCE}); pwd)
+[ -n "${FunctionsDir}" ] || FunctionsDir=${ScriptDir}/Functions
+
+source ${FunctionsDir}/Color.sh
+source ${FunctionsDir}/Mount.sh
+source ${FunctionsDir}/Configure.sh
 
 # Usage: UnPackRootFS <Package> <RootDir>
 UnPackRootFS()

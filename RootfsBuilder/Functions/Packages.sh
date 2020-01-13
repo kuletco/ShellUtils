@@ -1,9 +1,10 @@
 #!/bin/bash
 
-WorkDir=$(pwd)
-ScriptDir=$(cd $(dirname ${BASH_SOURCE}); pwd)
-source ${ScriptDir}/Color.sh
-source ${ScriptDir}/Mount.sh
+[ -n "${ScriptDir}" ] || ScriptDir=$(cd $(dirname ${BASH_SOURCE}); pwd)
+[ -n "${FunctionsDir}" ] || FunctionsDir=${ScriptDir}/Functions
+
+source ${FunctionsDir}/Color.sh
+source ${FunctionsDir}/Mount.sh
 
 # Usage: InstallPackages <RootDir> <Option: Update|Upgrade|Install> <Packages...>
 InstallPackages()

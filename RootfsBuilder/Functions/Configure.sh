@@ -1,3 +1,7 @@
+#!/bin/bash
+
+[ -n "${ScriptDir}" ] || ScriptDir=$(cd $(dirname ${BASH_SOURCE}); pwd)
+[ -n "${WorkDir}" ] || WorkDir=$(pwd)
 
 SquashfsFile=
 VDisk=
@@ -5,7 +9,7 @@ RootDir=
 CacheDir=
 ProfilesDir=
 ExtPackageDir=
-RootfsPackage=
+RootfsBasePackage=
 
 PreCopyFiles=
 PostCopyFiles=
@@ -140,7 +144,7 @@ ShowSettings()
     echo -e "RootDir = ${RootDir}"
     echo -e "CacheDir = ${CacheDir}"
     echo -e "ProfilesDir = ${ProfilesDir}"
-    echo -e "RootfsPackage = ${RootfsPackage}"
+    echo -e "RootfsBasePackage = ${RootfsBasePackage}"
     echo -e "PreReplaceFiles = ${PreReplaceFiles}"
     echo -e "PostReplaceFiles = ${PostReplaceFiles}"
     echo -e "AptUrl = ${AptUrl}"
@@ -165,10 +169,10 @@ LoadSettings()
     SquashfsFile=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings SquashfsFile)
     VDisk=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings VDisk)
     RootDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings RootDir)
-    CacheDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings CacheDir)
-    ProfilesDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings ProfilesDir)
-    ExtPackageDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings ExtPackageDir)
-    RootfsPackage=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings RootfsPackage)
+    CacheDir=${ScriptDir}/$(ConfGetValue ${ConfigFile} Settings CacheDir)
+    ProfilesDir=${ScriptDir}/$(ConfGetValue ${ConfigFile} Settings ProfilesDir)
+    ExtPackageDir=${ScriptDir}/$(ConfGetValue ${ConfigFile} Settings ExtPackageDir)
+    RootfsBasePackage=${ScriptDir}/$(ConfGetValue ${ConfigFile} Settings RootfsBasePackage)
 
     PreCopyFiles=$(ConfGetValues ${ConfigFile} PreCopy)
     PostCopyFiles=$(ConfGetValues ${ConfigFile} PostCopy)

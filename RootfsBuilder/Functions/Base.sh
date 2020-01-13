@@ -1,7 +1,9 @@
 #!/bin/bash
 
-ScriptDir=$(cd $(dirname ${BASH_SOURCE}); pwd)
-source ${ScriptDir}/Color.sh
+[ -n "${ScriptDir}" ] || ScriptDir=$(cd $(dirname ${BASH_SOURCE}); pwd)
+[ -n "${FunctionsDir}" ] || FunctionsDir=${ScriptDir}/Functions
+
+source ${FunctionsDir}/Color.sh
 
 CheckPrivilege()
 {
