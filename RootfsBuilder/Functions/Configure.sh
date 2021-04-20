@@ -3,6 +3,8 @@
 [ -n "${ScriptDir}" ] || ScriptDir=$(cd $(dirname ${BASH_SOURCE}); pwd)
 [ -n "${WorkDir}" ] || WorkDir=$(pwd)
 
+BuildType=
+
 SquashfsFile=
 VDisk=
 RootDir=
@@ -139,21 +141,22 @@ GetConfPackages()
 # Usage: GetConfPackages
 ShowSettings()
 {
-    echo -e "SquashfsFile = ${SquashfsFile}"
-    echo -e "VDisk = ${VDisk}"
-    echo -e "RootDir = ${RootDir}"
-    echo -e "CacheDir = ${CacheDir}"
-    echo -e "ProfilesDir = ${ProfilesDir}"
-    echo -e "RootfsBasePackage = ${RootfsBasePackage}"
-    echo -e "PreReplaceFiles = ${PreReplaceFiles}"
-    echo -e "PostReplaceFiles = ${PostReplaceFiles}"
-    echo -e "AptUrl = ${AptUrl}"
-    echo -e "Encoding = ${Encoding}"
-    echo -e "Language = ${Language}"
-    echo -e "Locales = ${Locales}"
-    echo -e "BootloaderID = ${BootloaderID}"
-    echo -e "AccountUsername = ${AccountUsername}"
-    echo -e "AccountPassword = ${AccountPassword}"
+    echo -e "BuildType          = ${BuildType}"
+    echo -e "SquashfsFile       = ${SquashfsFile}"
+    echo -e "VDisk              = ${VDisk}"
+    echo -e "RootDir            = ${RootDir}"
+    echo -e "CacheDir           = ${CacheDir}"
+    echo -e "ProfilesDir        = ${ProfilesDir}"
+    echo -e "RootfsBasePackage  = ${RootfsBasePackage}"
+    echo -e "PreReplaceFiles    = ${PreReplaceFiles}"
+    echo -e "PostReplaceFiles   = ${PostReplaceFiles}"
+    echo -e "AptUrl             = ${AptUrl}"
+    echo -e "Encoding           = ${Encoding}"
+    echo -e "Language           = ${Language}"
+    echo -e "Locales            = ${Locales}"
+    echo -e "BootloaderID       = ${BootloaderID}"
+    echo -e "AccountUsername    = ${AccountUsername}"
+    echo -e "AccountPassword    = ${AccountPassword}"
 }
 
 # Usage: LoadSettings <ConfigFile>
@@ -166,6 +169,7 @@ LoadSettings()
 
     local ConfigFile=$1
 
+    BuildType=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings BuildType)
     SquashfsFile=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings SquashfsFile)
     VDisk=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings VDisk)
     RootDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings RootDir)

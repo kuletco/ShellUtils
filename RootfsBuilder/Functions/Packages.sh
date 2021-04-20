@@ -3,8 +3,17 @@
 [ -n "${ScriptDir}" ] || ScriptDir=$(cd $(dirname ${BASH_SOURCE}); pwd)
 [ -n "${FunctionsDir}" ] || FunctionsDir=${ScriptDir}/Functions
 
-source ${FunctionsDir}/Color.sh
-source ${FunctionsDir}/Mount.sh
+if [ -f ${ScriptDir}/Color.sh ]; then
+    source ${ScriptDir}/Color.sh
+elif [ -f ${FunctionsDir}/Color.sh ]; then
+    source ${FunctionsDir}/Color.sh
+fi
+
+if [ -f ${ScriptDir}/Mount.sh ]; then
+    source ${ScriptDir}/Mount.sh
+elif [ -f ${FunctionsDir}/Mount.sh ]; then
+    source ${FunctionsDir}/Mount.sh
+fi
 
 # Usage: InstallPackages <RootDir> <Option: Update|Upgrade|Install> <Packages...>
 InstallPackages()

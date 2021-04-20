@@ -4,7 +4,11 @@
 [ -n "${FunctionsDir}" ] || FunctionsDir=${ScriptDir}/Functions
 [ -n "${WorkDir}" ] || WorkDir=$(pwd)
 
-source ${FunctionsDir}/Color.sh
+if [ -f ${ScriptDir}/Color.sh ]; then
+    source ${ScriptDir}/Color.sh
+elif [ -f ${FunctionsDir}/Color.sh ]; then
+    source ${FunctionsDir}/Color.sh
+fi
 
 # Usage: IsTargetMounted <Target>
 IsTargetMounted()
