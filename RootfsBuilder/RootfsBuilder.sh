@@ -10,7 +10,7 @@ RootDir=
 CacheDir=
 ProfilesDir=
 ExtPackageDir=
-RootfsPackage=
+RootfsBasePackage=
 
 PreReplaceFiles=
 PostReplaceFiles=
@@ -42,8 +42,7 @@ C_ERROR="${C_RED}ERROR${C_CLR}"
 Script=$0
 ScriptDir="$(cd "$(dirname "$0")" && pwd)"
 
-CheckPrivilege()
-{
+CheckPrivilege() {
     if [ $UID -ne 0 ]; then
         echo -e  "Please run this script with \033[1m\033[31mroot\033[0m privileges."
         return 1
@@ -52,12 +51,10 @@ CheckPrivilege()
     fi
 }
 
-CheckBuildEnvironment()
-{
-    Utils="blkid lsblk kpartx parted mkfs.ext4 mkfs.fat"
+CheckBuildEnvironment() {
+    Utils="blkid lsblk losetup parted mkfs.ext4 mkfs.fat"
 
-    for Util in ${Utils}
-    do
+    for Util in ${Utils}; do
         if ! which ${Util} >/dev/null 2>&1; then
             echo -e "Please install [${C_RED}${Util}${C_CLR}] first"
             return 1
@@ -68,8 +65,7 @@ CheckBuildEnvironment()
 }
 
 # USAGE: ConfGetSections <ConfFile>
-ConfGetSections()
-{
+ConfGetSections() {
     [ $# -eq 1 ] || (echo -e "Usage: ConfGetSections <ConfFile>" && return 1)
 
     local ConfFile=$1
@@ -77,8 +73,7 @@ ConfGetSections()
 }
 
 # USAGE: ConfGetKeys <ConfFile> <Section>
-ConfGetKeys()
-{
+ConfGetKeys() {
     [ $# -eq 2 ] || (echo -e "Usage: ConfGetKeys <ConfFile> <Section>" && return 1)
 
     local ConfFile=$1
@@ -88,8 +83,7 @@ ConfGetKeys()
 }
 
 # USAGE: ConfGetValues <ConfFile> <Section>
-ConfGetValues()
-{
+ConfGetValues() {
     [ $# -eq 2 ] || (echo -e "Usage: ConfGetValues <ConfFile> <Section>" && return 1)
 
     local ConfFile=$1
@@ -99,8 +93,7 @@ ConfGetValues()
 }
 
 # USAGE: ConfGetValue <ConfFile> <Section> <Key>
-ConfGetValue()
-{
+ConfGetValue() {
     [ $# -eq 3 ] || (echo -e "Usage: ConfGetValue <ConfFile> <Section> <Key>" && return 1)
 
     local ConfFile=$1
@@ -111,8 +104,7 @@ ConfGetValue()
 }
 
 # USAGE: ConfSetValue <ConfFile> <Section> <Key> <Value>
-ConfSetValue()
-{
+ConfSetValue() {
     [ $# -eq 4 ] || (echo -e "Usage: ConfGetValue <ConfFile> <Section> <Key>" && return 1)
 
     local ConfFile=$1
@@ -124,14 +116,13 @@ ConfSetValue()
 }
 
 # Usage: IsVirtualDiskLoaded <VirtualDisk>
-IsVirtualDiskLoaded()
-{
+IsVirtualDiskLoaded() {
     [ $# -eq 1 ] || (echo -e "Usage: IsVirtualDiskLoaded <VirtualDisk>" && return 1)
 
     local VirtualDisk=$1
     [ -e ${VirtualDisk} ] || return 1
 
-    if ! (kpartx -l ${VirtualDisk} | /bin/grep -q "deleted"); then
+    if [ -n "$(losetup --associated ${VirtualDisk})" ]; then
         return 0
     else
         return 1
@@ -139,52 +130,41 @@ IsVirtualDiskLoaded()
 }
 
 # Usage: GetVirtualDiskLoadedDevice <VirtualDisk>
-GetVirtualDiskLoadedDevice()
-{
+GetVirtualDiskLoadedDevice() {
     [ $# -eq 1 ] || (echo -e "Usage: GetVirtualDiskLoadedDevice <VirtualDisk>" && return 1)
 
     local VirtualDisk=$1
     [ -e ${VirtualDisk} ] || return 1
 
     if IsVirtualDiskLoaded ${VirtualDisk}; then
-        kpartx -l ${VirtualDisk} | head -1 | awk '{print $5}'
-        [ $? -eq 0 ] || return 1
+        losetup --associated ${VirtualDisk} | awk -F: '{print $1}'
     else
         return 1
     fi
 }
 
 # Usage: LoadVirtualDisk <VirtualDisk>
-LoadVirtualDisk()
-{
+LoadVirtualDisk() {
     [ $# -eq 1 ] || (echo -e "Usage: LoadVirtualDisk <VirtualDisk>" && return 1)
 
     local VirtualDisk=$1
     [ -e ${VirtualDisk} ] || return 1
 
-    if ! IsVirtualDiskLoaded ${VirtualDisk}; then
-        printf "LOADING: ${C_HL}${VirtualDisk}${C_CLR}"
-        if kpartx -a -s ${VirtualDisk}; then
+    local Device=$(GetVirtualDiskLoadedDevice ${VirtualDisk})
+    if [ $? -eq 0 ] && [ -z "${Device}" ]; then
+        printf "LOADING: ${C_HL}$(basename ${VirtualDisk})${C_CLR}"
+        Device=$(losetup --partscan --find --show ${VirtualDisk})
+        if [ $? -eq 0 ] && [ -n "${Device}" ] && [ -e "${Device}" ]; then
             printf " [${C_OK}]\n"
+            echo -e " ${C_HL}$(basename ${VirtualDisk})${C_CLR} --> ${C_YEL}${Device}${C_CLR}"
         else
             printf " [${C_FL}]\n"
-            return 1
         fi
-    fi
-
-    local LoopDevice=$(GetVirtualDiskLoadedDevice ${VirtualDisk})
-    if [ -n "${LoopDevice}" ]; then
-        echo -e " ${C_HL}${VirtualDisk}${C_CLR} --> ${C_YEL}${LoopDevice}${C_CLR}"
-        return 0
-    else
-        echo -e "Load Virtual Disk Failed!"
-        return 1
     fi
 }
 
 # Usage: CreateVirtualDisk <VirtualDisk>
-CreateVirtualDisk()
-{
+CreateVirtualDisk() {
     [ $# -eq 1 ] || (echo -e "Usage: CreateVirtualDisk <VirtualDisk>" && return 1)
 
     local VirtualDisk=$1
@@ -196,8 +176,7 @@ CreateVirtualDisk()
 }
 
 # Usage: CreatePartitions <Disk>
-CreatePartitions()
-{
+CreatePartitions() {
     [ $# -eq 1 ] || (echo -e "Usage: CreatePartitions <Disk>" && return 1)
 
     local Disk=$1
@@ -220,8 +199,7 @@ CreatePartitions()
 }
 
 # Usage: GetDiskType <Disk>
-GetDiskType()
-{
+GetDiskType() {
     [ $# -eq 1 ] || (echo -e "Usage: GetDiskType <Disk>" && return 1)
 
     local Disk=$1
@@ -240,17 +218,16 @@ GetDiskType()
 }
 
 # Usage: IsVirtualDisk <Disk>
-IsVirtualDisk()
-{
+IsVirtualDisk() {
     [ $# -eq 1 ] || (echo -e "Usage: IsVirtualDisk <Disk>" && return 1)
 
     local Disk=$1
     [ -e ${Disk} ] || return 1
 
     local folder=$(echo ${Disk} | cut -d '/' -f 2)
-    if [ x"${folder}" = x"dev" ]; then
+    if [ $? -eq 0 ] && [ x"${folder}" = x"dev" ]; then
         local DiskType=$(GetDiskType ${Disk})
-        if [ x"${DiskType}" = x"disk" ]; then
+        if [ $? -eq 0 ] && [ x"${DiskType}" = x"disk" ]; then
             return 1
         else
             return 0
@@ -265,8 +242,7 @@ IsVirtualDisk()
 }
 
 # Usage: GetDiskPartitions <Disk>
-GetDiskPartitions()
-{
+GetDiskPartitions() {
     [ $# -eq 1 ] || (echo -e "Usage: GetDiskPartitions <Disk>" && return 1)
 
     local Disk=$1
@@ -275,24 +251,20 @@ GetDiskPartitions()
     local Devices=""
     local Partitions=""
 
-    if IsVirtualDisk ${Disk}; then
-        Devices=$(kpartx -l ${Disk} | /bin/grep "^loop[0-9]" | awk '{print $1}')
-        [ -n "${Devices}" ] || return 1
-
-        for Partition in ${Devices}
-        do
-            Partitions="${Partitions:+${Partitions} }/dev/mapper/${Partition}"
-        done
+    if lsblk ${Disk} >/dev/null 2>&1; then
+        Device=${Disk}
+    else
+        Device=$(GetVirtualDiskLoadedDevice ${Disk})
     fi
 
-    [ -n "${Partitions}" ] || return 1
+    Partitions=$(lsblk ${Device} -p -r -n | awk '/part/{print $1}')
+    [ $? -eq 0 ] && [ -n "${Partitions}" ] || return 1
 
     echo -e ${Partitions}
 }
 
 # Usage: GetDiskPartInfo <Info> <Device>
-GetDiskPartInfo()
-{
+GetDiskPartInfo() {
     [ $# -eq 2 ] || (echo -e "Usage: GetPartitionType <Info> <Device>" && return 1)
 
     local Info=$1
@@ -319,14 +291,13 @@ GetDiskPartInfo()
     esac
 
     local PartInfo=$(blkid -s ${expr} -o value  ${Device})
-    [ -n "${PartInfo}" ] || return 1
+    [ $? -eq 0 ] && [ -n "${PartInfo}" ] || return 1
 
     echo ${PartInfo}
 }
 
 # Usage: GetDiskPartDevice <Disk> <Info> <String>
-GetDiskPartDevice()
-{
+GetDiskPartDevice() {
     [ $# -eq 3 ] || (echo -e "Usage: GetDiskPartDevice <Disk> <Info> <String>" && return 1)
 
     local Disk=$1
@@ -336,10 +307,9 @@ GetDiskPartDevice()
     [ -n ${String} ] || return 1
 
     local Partitions=$(GetDiskPartitions ${Disk})
-    [ -n "${Partitions}" ] || return 1
+    [ $? -eq 0 ] && [ -n "${Partitions}" ] || return 1
 
-    for Partition in ${Partitions}
-    do
+    for Partition in ${Partitions}; do
         local PartInfo=$(GetDiskPartInfo ${Info} ${Partition})
         [ $? -eq 0 ] || return 1
 
@@ -354,8 +324,7 @@ GetDiskPartDevice()
 }
 
 # Usage: FormatPartitions <VirtualDisk>
-FormatPartitions()
-{
+FormatPartitions() {
     [ $# -eq 1 ] || (echo -e "Usage: FormatPartitions <VirtualDisk>" && return 1)
 
     local VirtualDisk=$1
@@ -367,12 +336,11 @@ FormatPartitions()
     fi
 
     local Partitions=$(GetDiskPartitions ${VirtualDisk})
-    [ -n "${Partitions}" ] || return 1
+    [ $? -eq 0 ] && [ -n "${Partitions}" ] || return 1
 
-    for Partition in ${Partitions}
-    do
+    for Partition in ${Partitions}; do
         local PartType=$(GetDiskPartInfo Type ${Partition})
-        if [ -n "${PartType}" ]; then
+        if [ $? -eq 0 ] && [ -n "${PartType}" ]; then
             case ${PartType} in
                 ext4)
                     fstype="ext4"
@@ -390,7 +358,7 @@ FormatPartitions()
         else
             local PartLabel=$(GetDiskPartInfo Label ${Partition})
             # [ -n "${PartLabel}" ] || (echo -e "FORMAT_ERROR: Get Partition Information failed" && return 1)
-            if [ -z "${PartLabel}" ]; then
+            if [ $? -eq 0 ] && [ -z "${PartLabel}" ]; then
                 echo -e "FORMAT_ERROR: Get Partition Information failed"
                 return 1
             else
@@ -425,15 +393,14 @@ FormatPartitions()
 }
 
 # Usage: IsTargetMounted <Target>
-IsTargetMounted()
-{
+IsTargetMounted() {
     [ $# -eq 1 ] || (echo -e "Usage: IsTargetMounted <Target>" && return 1)
 
     local Target=$1
 
     if [ -d "${Target}" ]; then
         return $(mountpoint -q "${Target}")
-    elif [ -f "${Target}" -o -L "${Target}" ]; then
+    elif [ -f "${Target}" ] || [ -L "${Target}" ] || echo ${Target} | grep -q '^/dev'; then
         return $(mount | /bin/grep -q ${Target})
     else
         return 1
@@ -441,8 +408,7 @@ IsTargetMounted()
 }
 
 # Usage: GetTargetMountPoint <Device>
-GetTargetMountPoint()
-{
+GetTargetMountPoint() {
     [ $# -eq 1 ] || (echo -e "Usage: GetTargetMountPoint <Device>" && return 1)
 
     local Device=$1
@@ -450,14 +416,13 @@ GetTargetMountPoint()
 
     IsTargetMounted ${Device} || return 1
     local MountedDir=$(lsblk -n -o MOUNTPOINT ${Device})
-    [ -n "${MountedDir}" ] || return 1
+    [ $? -eq 0 ] && [ -n "${MountedDir}" ] || return 1
 
     echo ${MountedDir}
 }
 
 # Usage: IsVirtualDiskMounted <VirtualDisk>
-IsVirtualDiskMounted()
-{
+IsVirtualDiskMounted() {
     [ $# -eq 1 ] || (echo -e "Usage: IsVirtualDiskMounted <VirtualDisk>" && return 1)
 
     local VirtualDisk=$1
@@ -466,7 +431,7 @@ IsVirtualDiskMounted()
     IsVirtualDiskLoaded ${VirtualDisk} || return 1
 
     local loopdev=$(GetVirtualDiskLoadedDevice ${VirtualDisk})
-    [ -n "${loopdev}" ] || return 1
+    [ $? -eq 0 ] && [ -n "${loopdev}" ] || return 1
 
     if mount | /bin/grep -q "$(basename ${loopdev}p)"; then
         return 0
@@ -475,8 +440,7 @@ IsVirtualDiskMounted()
 }
 
 # Usage: ShowVirtualDiskMountedInfo <VirtualDisk>
-ShowVirtualDiskMountedInfo()
-{
+ShowVirtualDiskMountedInfo() {
     [ $# -eq 1 ] || (echo -e "Usage: IsVirtualDiskMounted <VirtualDisk>" && return 1)
 
     local VirtualDisk=$1
@@ -486,20 +450,21 @@ ShowVirtualDiskMountedInfo()
     IsVirtualDiskMounted ${VirtualDisk} || return 0
 
     local loopdev=$(GetVirtualDiskLoadedDevice ${VirtualDisk})
-    [ -n "${loopdev}" ] || return 1
+    [ $? -eq 0 ] && [ -n "${loopdev}" ] || return 1
 
-    echo -e "LOADED: ${C_HL}${VirtualDisk}${C_CLR} ${C_YEL}${loopdev}${C_CLR}"
-    mount | /bin/grep "$(basename ${loopdev}p)" | while read line
-    do
+    local mdev_last=''
+    echo -e "LOADED: ${C_HL}$(basename ${VirtualDisk})${C_CLR} ${C_YEL}${loopdev}${C_CLR}"
+    mount | /bin/grep "$(basename ${loopdev}p)" | while read line; do
         local mdev=$(echo ${line} | awk '{print $1}')
         local mdir=$(echo ${line} | awk '{print $3}')
-        echo -e "MOUNTED: ${C_YEL}${mdev}${C_CLR} --> ${C_BLU}${mdir}${C_CLR}"
+        mdir=${mdir#*${WorkDir}/}
+        [ x"${mdev_last}" = x"${mdev}" ] || echo -e "MOUNTED: ${C_YEL}${mdev}${C_CLR} --> ${C_BLU}${mdir}${C_CLR}"
+        mdev_last=${mdev}
     done
 }
 
 # Usage: GetVirtualDiskMountedParts <VirtualDisk>
-GetVirtualDiskMountedParts()
-{
+GetVirtualDiskMountedParts() {
     [ $# -eq 1 ] || (echo -e "Usage: GetVirtualDiskMountedParts <VirtualDisk>" && return 1)
 
     local VirtualDisk=$1
@@ -515,8 +480,7 @@ GetVirtualDiskMountedParts()
 }
 
 # Usage: GetVirtualDiskMountedRoot <VirtualDisk>
-GetVirtualDiskMountedRoot()
-{
+GetVirtualDiskMountedRoot() {
     [ $# -eq 1 ] || (echo -e "Usage: GetVirtualDiskMountedRoot <VirtualDisk>" && return 1)
 
     local VirtualDisk=$1
@@ -525,16 +489,14 @@ GetVirtualDiskMountedRoot()
     IsVirtualDiskMounted ${VirtualDisk} || return 1
 
     local Partitions=$(GetDiskPartitions ${VirtualDisk})
-    [ -n "${Partitions}" ] || return 1
+    [ $? -eq 0 ] && [ -n "${Partitions}" ] || return 1
 
-    for Partition in ${Partitions}
-    do
+    for Partition in ${Partitions}; do
         local PartLabel=$(GetDiskPartInfo Label ${Partition})
-        [ -n "${PartLabel}" ] || return 1
-        if [ x"${PartLabel}" == x"ROOT" ]; then
+        if [ $? -eq 0 ] && [ x"${PartLabel}" = x"ROOT" ]; then
             IsTargetMounted ${Partition} || return 1
-            local MountDir=$(mount | /bin/grep ${Partition} | awk '{print $3}')
-            [ -n "${MountDir}" ] || return 1
+            local MountDir=$(mount | /bin/grep ${Partition} | grep ${WorkDir} | awk '{print $3}')
+            [ $? -eq 0 ] && [ -n "${MountDir}" ] || return 1
             echo -e ${MountDir}
             return 0
         fi
@@ -542,15 +504,13 @@ GetVirtualDiskMountedRoot()
 }
 
 # Usage: Mount [-c <RootDir>] [-t <Type> | -b] <Source> <DstDir>
-Mount()
-{
+Mount() {
     local Usage="Usage: Mount [-c <RootDir>] [-t <Type> | -b] <Source> <DstDir>"
     local Prefix=""
     local Options=""
     local RootDir=""
 
-    while [ $# -ne 0 ]
-    do
+    while [ $# -ne 0 ]; do
         case $1 in
             -c|--chroot)
                 RootDir=$2
@@ -585,7 +545,7 @@ Mount()
         return 0
     fi
 
-    printf "MOUNT: ${C_GEN}${Options:+[${Options}] }${C_YEL}${Source}${C_CLR} --> ${C_BLU}${DstDir}${C_CLR}"
+    printf "MOUNT: ${C_GEN}${Options:+[${Options}] }${C_YEL}${Source#*${WorkDir}/}${C_CLR} --> ${C_BLU}${DstDir#*${WorkDir}/}${C_CLR}"
     if ! eval ${Prefix} mount ${Options} ${Source} ${DstDir} >/dev/null 2>&1; then
         printf " [${C_FL}]\n"
         return 1
@@ -596,15 +556,13 @@ Mount()
 }
 
 # Usage: UnMount [-c <RootDir>] <Directory>
-UnMount()
-{
+UnMount() {
     local Usage="Usage: UnMount [-c <RootDir>] <Directory>"
     local Prefix=""
     local RootDir=""
     local Directory=""
 
-    while [ $# -ne 0 ]
-    do
+    while [ $# -ne 0 ]; do
         case $1 in
             -c|--chroot)
                 RootDir=$2
@@ -625,7 +583,7 @@ UnMount()
 
     if eval ${Prefix} umount --help | grep -q "recursive"; then
         if eval ${Prefix} mountpoint -q ${Directory}; then
-            printf "UMOUNT: [${C_GEN}Recursive${C_CLR}] ${C_YEL}${Directory}${C_CLR}"
+            printf "UMOUNT: [${C_GEN}Recursive${C_CLR}] ${C_YEL}${Directory#*${WorkDir}/}${C_CLR}"
             if ! eval ${Prefix} umount -R ${Directory} >/dev/null 2>&1; then
                 if ! eval ${Prefix} umount -Rl ${Directory} >/dev/null 2>&1; then
                     printf " [${C_FL}]\n"
@@ -636,9 +594,8 @@ UnMount()
         fi
     else
         dirlist=$(eval ${Prefix} mount | grep "${Directory}")
-        [ -n "${dirlist}" ] && return 0
-        for dir in ${dirlist}
-        do
+        [ $? -eq 0 ] && [ -n "${dirlist}" ] && return 0
+        for dir in ${dirlist}; do
             if eval ${Prefix} mountpoint -q ${dir}; then
                 printf "UNMOUNT: ${C_YEL}${dir}${C_CLR}"
                 if ! eval ${Prefix} umount ${dir}; then
@@ -656,8 +613,7 @@ UnMount()
 }
 
 # Usage: MountCache <RootDir> <CacheDir>
-MountCache()
-{
+MountCache() {
     [ $# -eq 2 ] || (echo -e "Usage: MountCache <RootDir> <CacheDir>" && return 1)
 
     local RootDir=$1
@@ -677,8 +633,7 @@ MountCache()
 }
 
 # Usage: UnMountCache <RootDir>
-UnMountCache()
-{
+UnMountCache() {
     [ $# -eq 1 ] || (echo -e "Usage: UnMountCache <RootDir>" && return 1)
 
     local RootDir=$1
@@ -686,8 +641,7 @@ UnMountCache()
     local RootAptLists=${RootDir}/var/lib/apt/lists
     [ -n "${RootDir}" ] || return 1
 
-    for dir in ${RootAptCache} ${RootAptLists}
-    do
+    for dir in ${RootAptCache} ${RootAptLists}; do
         UnMount ${dir} || return 1
     done
 
@@ -695,8 +649,7 @@ UnMountCache()
 }
 
 # Usage: MountSystemEntries <RootDir>
-MountSystemEntries()
-{
+MountSystemEntries() {
     [ $# -eq 1 ] || (echo -e "Usage: MountSystemEntries <RootDir>" && return 1)
 
     local RootDir=$1
@@ -721,8 +674,7 @@ MountSystemEntries()
 }
 
 # Usage: UnMountSystemEntries <RootDir>
-UnMountSystemEntries()
-{
+UnMountSystemEntries() {
     [ $# -eq 1 ] || (echo -e "Usage: MountSystemEntries <RootDir>" && return 1)
 
     local RootDir=$1
@@ -731,8 +683,7 @@ UnMountSystemEntries()
 
     [ -x ${RootDir}/bin/mountpoint ] && Prefix="chroot ${RootDir}"
 
-    for dir in tmp run dev/pts dev sys proc
-    do
+    for dir in tmp run dev/pts dev sys proc; do
         if eval ${Prefix} mountpoint -q ${RootDir}/proc; then
             UnMount --chroot ${RootDir} ${dir} || return 1
         else
@@ -744,16 +695,14 @@ UnMountSystemEntries()
 }
 
 # Usage: MountUserEntries <RootDir>
-MountUserEntries()
-{
+MountUserEntries() {
     [ $# -eq 1 ] || (echo -e "Usage: MountUserEntries <RootDir>" && return 1)
 
     local RootDir=$1
     local UserDir=${RootDir}/data
     [ -n "${RootDir}" ] || return 1
 
-    for dir in home root var/log
-    do
+    for dir in home root var/log; do
         mkdir -p ${RootDir}/${dir} ${UserDir}/${dir} || return 1
         Mount --bind ${UserDir}/${dir} ${RootDir}/${dir} || return 1
     done
@@ -762,15 +711,13 @@ MountUserEntries()
 }
 
 # Usage: UnMountUserEntries <RootDir>
-UnMountUserEntries()
-{
+UnMountUserEntries() {
     [ $# -eq 1 ] || (echo -e "Usage: UnMountUserEntries <RootDir>" && return 1)
 
     local RootDir=$1
     [ -n "${RootDir}" ] || return 1
 
-    for dir in home root var/log
-    do
+    for dir in home root var/log; do
         UnMount ${RootDir}/${dir} || return 1
     done
 
@@ -778,8 +725,7 @@ UnMountUserEntries()
 }
 
 # Usage: MountVirtualDisk <VirtualDisk> <RootDir> <CacheDir>
-MountVirtualDisk()
-{
+MountVirtualDisk() {
     [ $# -eq 3 ] || (echo -e "Usage: MountVirtualDisk <VirtualDisk> <RootDir> <CacheDir>" && return 1)
 
     local VirtualDisk=$1
@@ -798,14 +744,13 @@ MountVirtualDisk()
 
     # Mount partition by partition label
     local Partitions=$(GetDiskPartitions ${VirtualDisk})
-    [ -n "${Partitions}" ] || return 1
+    [ $? -eq 0 ] && [ -n "${Partitions}" ] || return 1
     local LastParts=
 
     # Find ROOT partition and mount it first
-    for dev in ${Partitions}
-    do
+    for dev in ${Partitions}; do
         local PartLabel=$(GetDiskPartInfo Label $(realpath -L ${dev}))
-        [ -n "${PartLabel}" ] || return 1
+        [ $? -eq 0 ] && [ -n "${PartLabel}" ] || return 1
         if [ x"${PartLabel}" == x"ROOT" ]; then
             mkdir -p ${RootDir} || return 1
             #Mount $(realpath -L ${dev}) ${RootDir} || return 1
@@ -815,10 +760,9 @@ MountVirtualDisk()
         fi
     done
 
-    for dev in ${LastParts}
-    do
+    for dev in ${LastParts}; do
         local PartLabel=$(GetDiskPartInfo Label $(realpath -L ${dev}))
-        [ -n "${PartLabel}" ] || return 1
+        [ $? -eq 0 ] && [ -n "${PartLabel}" ] || return 1
         case ${PartLabel} in
             STBINFO)
                 mkdir -p ${StbInfoDir} || return 1
@@ -859,8 +803,7 @@ MountVirtualDisk()
 }
 
 # Usage: UnMountVirtualDisk <VirtualDisk> <RootDir>
-UnMountVirtualDisk()
-{
+UnMountVirtualDisk() {
     [ $# -eq 2 ] || (echo -e "Usage: UnMountVirtualDisk <VirtualDisk> <RootDir>" && return 1)
 
     local VirtualDisk=$1
@@ -868,7 +811,7 @@ UnMountVirtualDisk()
 
     if IsVirtualDiskMounted ${VirtualDisk}; then
         local VirtualDiskRoot=$(GetVirtualDiskMountedRoot ${VirtualDisk})
-        if [ -n "${VirtualDiskRoot}" ]; then
+        if [ $? -eq 0 ] && [ -n "${VirtualDiskRoot}" ]; then
             UnMountCache ${VirtualDiskRoot} || return 1
             UnMountUserEntries ${VirtualDiskRoot} || return 1
             UnMountSystemEntries ${VirtualDiskRoot} || return 1
@@ -886,25 +829,24 @@ UnMountVirtualDisk()
 }
 
 # Usage: UnLoadVirtualDisk <VirtualDisk>
-UnLoadVirtualDisk()
-{
+UnLoadVirtualDisk() {
     [ $# -eq 1 ] || (echo -e "Usage: UnLoadVirtualDisk <VirtualDisk>" && return 1)
 
     local VirtualDisk=$1
     [ -e ${VirtualDisk} ] || return 1
 
-    if IsVirtualDiskMounted ${VDisk}; then
-        ShowVirtualDiskMountedInfo ${VDisk} || return 1
-        MountedDir=$(GetVirtualDiskMountedRoot ${VDisk})
-        [ -n "${MountedDir}" ] || return 1
-        UnMountVirtualDisk ${VDisk} ${MountedDir} || return 1
+    if IsVirtualDiskMounted ${VirtualDisk}; then
+        ShowVirtualDiskMountedInfo ${VirtualDisk} || return 1
+        MountedDir=$(GetVirtualDiskMountedRoot ${VirtualDisk})
+        [ $? -eq 0 ] && [ -n "${MountedDir}" ] || return 1
+        UnMountVirtualDisk ${VirtualDisk} ${MountedDir} || return 1
     fi
 
     if IsVirtualDiskLoaded ${VirtualDisk}; then
         local LoopDevice=$(GetVirtualDiskLoadedDevice ${VirtualDisk})
-        if [ -n "${LoopDevice}" ]; then
-            printf "UNLOADING: ${C_HL}${VirtualDisk}${C_CLR} <--> ${C_YEL}${LoopDevice}${C_CLR} "
-            kpartx -d ${VirtualDisk} >/dev/null 2>&1
+        if [ $? -eq 0 ] && [ -n "${LoopDevice}" ]; then
+            printf "UNLOADING: ${C_HL}$(basename ${VirtualDisk})${C_CLR} <--> ${C_YEL}${LoopDevice}${C_CLR} "
+            losetup --detach ${LoopDevice} >/dev/null 2>&1
             if ! IsVirtualDiskLoaded ${VirtualDisk}; then
                 printf " [${C_OK}]\n"
                 return 0
@@ -914,14 +856,13 @@ UnLoadVirtualDisk()
             fi
         fi
     fi
-    echo -e "VirtualDisk ${C_HL}${VirtualDisk}${C_CLR} not loaded"
+    echo -e "VirtualDisk ${C_HL}$(basename ${VirtualDisk})${C_CLR} not loaded"
 
     return 0
 }
 
 # Usage: InitializeVirtualDisk <VirtualDisk> <RootDir>
-InitializeVirtualDisk()
-{
+InitializeVirtualDisk() {
     [ $# -eq 2 ] || (echo -e "Usage: InitializeVirtualDisk <VirtualDisk> <RootDir>" && return 1)
 
     local VirtualDisk=$1
@@ -949,14 +890,13 @@ InitializeVirtualDisk()
 }
 
 # Usage: UnPackRootFS <Package> <RootDir>
-UnPackRootFS()
-{
+UnPackRootFS() {
     [ $# -eq 2 ] || (echo -e "Usage: UnPackRootFS <Package> <RootDir>" && return 1)
 
     local Package=$1
     local RootDir=$2
 
-    printf "UNPACK: ${C_HL}${Package}${C_CLR} --> ${C_BLU}${RootDir}${C_CLR} ..."
+    printf "UNPACK: ${C_HL}$(basename ${Package})${C_CLR} --> ${C_BLU}$(basename ${RootDir})${C_CLR} ..."
     if ! tar --exclude=dev/* -xf ${Package} -C ${RootDir} >>/dev/null 2>&1; then
         printf " [${C_FL}]\n"
         return 1
@@ -967,8 +907,7 @@ UnPackRootFS()
 }
 
 # Usage: GetConfPackages <ConfigFile> <Section>
-GetConfPackages()
-{
+GetConfPackages() {
     [ $# -eq 2 ] || (echo -e "Usage: GetConfPackages <ConfigFile> <Section>" && return 1)
     local ConfigFile=$1
     local Section=$2
@@ -978,12 +917,11 @@ GetConfPackages()
     [ -f "${ConfigFile}" ] || return 1
 
     local PackagesList=$(ConfGetKeys ${ConfigFile} ${Section})
-    [ -n "${PackagesList}" ] || return 1
+    [ $? -eq 0 ] && [ -n "${PackagesList}" ] || return 1
 
-    for Package in ${PackagesList}
-    do
+    for Package in ${PackagesList}; do
         local Enabled=$(ConfGetValue ${ConfigFile} ${Section} ${Package})
-        if [ -n "${Enabled}" ]; then
+        if [ $? -eq 0 ] && [ -n "${Enabled}" ]; then
             case ${Enabled} in
                 y|Y|yes|YES|Yes)
                     Packages=${Packages:+${Packages} }${Package}
@@ -1002,8 +940,7 @@ GetConfPackages()
 }
 
 # Usage: ReplaceFiles <RootDir> <ProfilesDir> <Files...>
-ReplaceFiles()
-{
+ReplaceFiles() {
     [ $# -gt 2 ] || (echo -e "Usage: ReplaceFiles <RootDir> <ProfilesDir> <Files...>" && return 1)
 
     local RootDir=$1
@@ -1014,10 +951,9 @@ ReplaceFiles()
     local ModifiedDir=${ProfilesDir}/modified
 
     if [ -d "${ProfilesDir}/modified" ]; then
-        for File in ${FileList}
-        do
+        for File in ${FileList}; do
             # Backup File
-            mkdir -p ${BackupDir}
+            mkdir -p ${BackupDir} || return $?
             if [ -f "${RootDir}/${File}" ]; then
                 cp -a "${RootDir}/${File}" "${BackupDir}" >/dev/null 2>&1
             fi
@@ -1025,7 +961,7 @@ ReplaceFiles()
             printf "REPLACE: ${C_HL}${File}${C_CLR} ..."
             FileName=$(basename ${File})
             if [ -f "${ModifiedDir}/${FileName}" ]; then
-                mkdir -p "$(dirname ${RootDir}/${File})"
+                mkdir -p "$(dirname ${RootDir}/${File})" || return $?
                 if ! cp -a "${ModifiedDir}/${FileName}" "${RootDir}/${File}" >/dev/null 2>&1; then
                     printf " [${C_FL}]\n"
                 else
@@ -1037,8 +973,7 @@ ReplaceFiles()
 }
 
 # Usage: InstallPreSettings <RootDir> <PreSettingsDir>
-InstallPreSettings()
-{
+InstallPreSettings() {
     [ $# -eq 2 ] || (echo -e "Usage: InstallPreSettings <RootDir> <PreSettingsDir>" && return 1)
 
     local RootDir=$1
@@ -1047,8 +982,7 @@ InstallPreSettings()
     [ -d ${RootDir} ] || return 1
 
     printf "PRESETTING: Installing Pre-Settings files ..."
-    rsync -aq ${PreSettingsDir}/ ${RootDir}
-    if [ $? -eq 0 ]; then
+    if rsync -aq ${PreSettingsDir}/ ${RootDir}; then
         printf "[${C_OK}]\n"
         return 0
     else
@@ -1058,8 +992,7 @@ InstallPreSettings()
 }
 
 # Usage: InstallPackages <RootDir> <Option: Update|Upgrade|Install> <Packages...>
-InstallPackages()
-{
+InstallPackages() {
     [ $# -ge 2 ] || (echo -e "Usage: InstallPackages <RootDir> <Option: Update|Upgrade|Install> <Packages...>" && return 1)
     local RootDir=$1
     local Options=$2
@@ -1100,8 +1033,7 @@ InstallPackages()
             printf " [${C_OK}]\n"
         ;;
         -i|--install|Install|INSTALL)
-            for Package in ${Packages}
-            do
+            for Package in ${Packages}; do
                 printf "PKGINSTALL: ${C_YEL}Installing${C_CLR} ${C_HL}${Package}${C_CLR} ..."
                 # if ! chroot ${RootDir} apt-get ${AptOptions} install ${Package} >>${InsLogFile} 2>&1; then
                 if ! DEBIAN_FRONTEND=noninteractive chroot ${RootDir} apt ${AptOptions} install ${Package} >>${InsLogFile} 2>&1; then
@@ -1122,8 +1054,7 @@ InstallPackages()
 }
 
 # Usage: InstallExtrenPackages <RootDir> <Packages>
-InstallExtrenPackages()
-{
+InstallExtrenPackages() {
     [ $# -ge 2 ] || (echo -e "Usage: InstallExtrenPackages <RootDir> <Packages>" && return 1)
 
     local RootDir=$1
@@ -1137,8 +1068,7 @@ InstallExtrenPackages()
     local DpkgOptions=""
     DpkgOptions="${DpkgOptions:+${DpkgOptions} }--install"
 
-    for Package in ${Packages}
-    do
+    for Package in ${Packages}; do
         [ -f "${ExtPackageDir}/${Package}" ] || continue
         printf "PKGINSTALL: ${C_YEL}Installing${C_CLR} ${C_HL}${Package}${C_CLR} ..."
         cp ${ExtPackageDir}/${Package} ${RootDir}/tmp
@@ -1159,8 +1089,7 @@ InstallExtrenPackages()
 }
 
 # Usage: UnInstallPackages <RootDir> <Option: Remove|Purge> <Packages...>
-UnInstallPackages()
-{
+UnInstallPackages() {
     [ $# -ge 2 ] || (echo -e "Usage: UnInstallPackages <RootDir> <Option: Remove|Purge> <Packages...>" && return 1)
     local RootDir=$1
     local Options=$2
@@ -1181,8 +1110,7 @@ UnInstallPackages()
 
     case ${Options} in
         -r|--remove|remove|Remove|REMOMVE)
-            for Package in ${Packages}
-            do
+            for Package in ${Packages}; do
                 printf "PKGUNINSTALL: ${C_YEL}Removing${C_CLR} ${C_HL}${Package}${C_CLR} ..."
                 if ! DEBIAN_FRONTEND=noninteractive chroot "${RootDir}" apt ${AptOptions} remove ${Package} >>"${LogFile}" 2>&1; then
                     printf " [${C_FL}]\n"
@@ -1192,8 +1120,7 @@ UnInstallPackages()
             done
             ;;
         -p|--purge|purge|Purge|PURGE)
-            for Package in ${Packages}
-                do
+            for Package in ${Packages}; do
                 printf "PKGUNINSTALL: ${C_YEL}Purging${C_CLR} ${C_HL}${Package}${C_CLR} ..."
                 if ! DEBIAN_FRONTEND=noninteractive chroot "${RootDir}" apt ${AptOptions} purge ${Package} >>"${LogFile}" 2>&1; then
                     printf " [${C_FL}]\n"
@@ -1213,8 +1140,7 @@ UnInstallPackages()
 }
 
 # Usage: GenerateFSTAB <VirtualDisk> <RootDir>
-GenerateFSTAB()
-{
+GenerateFSTAB() {
     [ $# -eq 2 ] || (echo -e "Usage: GenerateFSTAB <VirtualDisk> <RootDir>" && return 1)
 
     local VirtualDisk=$1
@@ -1228,7 +1154,7 @@ GenerateFSTAB()
     fi
 
     local Partitions=$(GetDiskPartitions ${VirtualDisk})
-    [ -n "${Partitions}" ] || return 1
+    [ $? -eq 0 ] && [ -n "${Partitions}" ] || return 1
 
     local StbiUUID=
     local UefiUUID=
@@ -1237,41 +1163,40 @@ GenerateFSTAB()
     local ConfUUID=
     local UserUUID=
 
-    for dev in ${Partitions}
-    do
+    for dev in ${Partitions}; do
         local PartLabel=$(GetDiskPartInfo Label $(realpath -L ${dev}))
-        [ -n "${PartLabel}" ] || return 1
+        [ $? -eq 0 ] && [ -n "${PartLabel}" ] || return 1
         case ${PartLabel} in
             ESP)
                 UefiUUID=$(GetDiskPartInfo UUID $(realpath -L ${dev}))
-                [ -n "${UefiUUID}" ] || return 1
+                [ $? -eq 0 ] && [ -n "${UefiUUID}" ] || return 1
             ;;
             STBINFO)
                 StbiUUID=$(GetDiskPartInfo UUID $(realpath -L ${dev}))
-                [ -n "${StbiUUID}" ] || return 1
+                [ $? -eq 0 ] && [ -n "${StbiUUID}" ] || return 1
             ;;
             RECOVERY)
                 RecoUUID=$(GetDiskPartInfo UUID $(realpath -L ${dev}))
-                [ -n "${RecoUUID}" ] || return 1
+                [ $? -eq 0 ] && [ -n "${RecoUUID}" ] || return 1
             ;;
             ROOT)
                 RootUUID=$(GetDiskPartInfo UUID $(realpath -L ${dev}))
-                [ -n "${RootUUID}" ] || return 1
+                [ $? -eq 0 ] && [ -n "${RootUUID}" ] || return 1
             ;;
             SYSCONF|CONFIG)
                 ConfUUID=$(GetDiskPartInfo UUID $(realpath -L ${dev}))
-                [ -n "${ConfUUID}" ] || return 1
+                [ $? -eq 0 ] && [ -n "${ConfUUID}" ] || return 1
             ;;
             USERDATA)
                 UserUUID=$(GetDiskPartInfo UUID $(realpath -L ${dev}))
-                [ -n "${UserUUID}" ] || return 1
+                [ $? -eq 0 ] && [ -n "${UserUUID}" ] || return 1
             ;;
             *)
             ;;
         esac
     done
 
-    printf "GENFSTAB: Generating ${C_HL}${RootDir}/etc/fstab${C_CLR} ..."
+    printf "GENFSTAB: Generating ${C_HL}$(basename ${RootDir})/etc/fstab${C_CLR} ..."
     mkdir -p ${RootDir}/etc
     local FSTAB=''
     FSTAB="${FSTAB:+${FSTAB}\n}# System Entry"
@@ -1307,8 +1232,7 @@ GenerateFSTAB()
 }
 
 # Usage: GenerateLocales <RootDir> <Locales>
-GenerateLocales()
-{
+GenerateLocales() {
     [ $# -gt 1 ] || (echo -e "Usage: GenerateLocales <RootDir> <Locales>" && return 1)
 
     local RootDir=$1
@@ -1335,14 +1259,12 @@ GenerateLocales()
 }
 
 # Usage: GenerateSourcesList <RootDir> <AptUrl>
-GenerateSourcesList()
-{
+GenerateSourcesList() {
     local CODENAME=$(chroot ${RootDir} lsb_release -s -c)
 }
 
 # Usage: SetUserPassword <RootDir> <Username> <Password>
-SetUserPassword()
-{
+SetUserPassword() {
     [ $# -eq 3 ] || (echo -e "Usage: SetUserPassword <RootDir> <Username> <Password>" && return 1)
 
     local RootDir=$1
@@ -1392,8 +1314,7 @@ SetUserPassword()
 }
 
 # Usage: SetupBootloader <VirtualDisk> <RootDir> <BootloaderID>
-SetupBootloader()
-{
+SetupBootloader() {
     [ $# -eq 3 ] || (echo -e "Usage: SetupBootloader <VirtualDisk> <RootDir> <BootloaderID>" && return 1)
 
     local VirtualDisk=$1
@@ -1412,22 +1333,23 @@ SetupBootloader()
     IsTargetMounted ${RootDir} || return 1
 
     local Partitions=$(GetDiskPartitions ${VirtualDisk})
-    [ -n "${Partitions}" ] || return 1
-    for Partition in ${Partitions}
-    do
+    [ $? -eq 0 ] && [ -n "${Partitions}" ] || return 1
+    for Partition in ${Partitions}; do
         local PartLabel=$(GetDiskPartInfo Label $(realpath -L ${Partition}))
-        if [ x"${PartLabel}" == x"ESP" ]; then
+        if [ $? -eq 0 ] && [ x"${PartLabel}" == x"ESP" ]; then
             IsTargetMounted ${Partition} || return 1
         fi
     done
 
     local BootDevice=$(GetVirtualDiskLoadedDevice ${VirtualDisk})
-    [ -n "${BootDevice}" ] || return 1
+    [ $? -eq 0 ] && [ -n "${BootDevice}" ] || return 1
 
     # Setup grub default settings
     local GrubDefault=${RootDir}/etc/default/grub
     local RootPartDev=$(GetDiskPartDevice ${VirtualDisk} LABEL ROOT)
+    [ $? -eq 0 ] || return 1
     local RootPartUUID=$(GetDiskPartInfo PARTUUID ${RootPartDev})
+    [ $? -eq 0 ] || return 1
     if [ -f ${GrubDefault} ]; then
         local Rst=0
         printf "BOOTLOADER: Update Bootloader Settings ..."
@@ -1499,12 +1421,11 @@ SetupBootloader()
     local BootGrubModules="ext2 part_gpt"
 
     local DestImages="BOOT/BOOTX64.EFI ${BootloaderID}/grubx64.efi"
-    for IMG in ${DestImages}
-    do
+    for IMG in ${DestImages}; do
         local IMGPath="/boot/efi/EFI/${IMG}"
         BootIMGOptions="${BootIMGOptions:+${BootIMGOptions} }--output ${IMGPath}"
 
-        mkdir -p $(dirname ${RootDir}${IMGPath})
+        mkdir -p $(dirname ${RootDir}${IMGPath}) || return 1
         printf "BOOTLOADER: Generate Bootloader images ${C_YEL}${RootDir}${IMGPath}${C_CLR} ..."
         if ! chroot ${RootDir} grub-mkimage ${BootIMGOptions} ${BootGrubModules} >>${BootloaderLogfile} 2>&1; then
             printf " [${C_FL}]\n"
@@ -1519,8 +1440,7 @@ SetupBootloader()
 }
 
 # Usage: CompressVirtualDisk <VirtualDisk>
-CompressVirtualDisk()
-{
+CompressVirtualDisk() {
     [ $# -eq 1 ] || (echo -e "Usage: CompressVirtualDisk <VirtualDisk>" && return 1)
 
     local VirtualDisk=$1
@@ -1532,8 +1452,7 @@ CompressVirtualDisk()
     ZipOptions="${ZipOptions:+${ZipOptions} }-q"
 
     printf "COMPRESS: Compressing the image ${C_YEL}$(basename ${VirtualDisk})${C_CLR} --> ${C_YEL}$(basename ${ZipFile})${C_CLR}"
-    zip ${ZipOptions} ${ZipFile} ${VirtualDisk}
-    if [ $? -ne 0 ]; then
+    if zip ${ZipOptions} ${ZipFile} ${VirtualDisk}; then
         printf " [${C_FL}]\n"
         return 1
     else
@@ -1543,13 +1462,12 @@ CompressVirtualDisk()
     return 0
 }
 
-ShowSettings()
-{
+ShowSettings() {
     echo -e "VDisk = ${VDisk}"
     echo -e "RootDir = ${RootDir}"
     echo -e "CacheDir = ${CacheDir}"
     echo -e "ProfilesDir = ${ProfilesDir}"
-    echo -e "RootfsPackage = ${RootfsPackage}"
+    echo -e "RootfsBasePackage = ${RootfsBasePackage}"
     echo -e "PreReplaceFiles = ${PreReplaceFiles}"
     echo -e "PostReplaceFiles = ${PostReplaceFiles}"
     echo -e "AptUrl = ${AptUrl}"
@@ -1562,8 +1480,7 @@ ShowSettings()
 }
 
 # Usage: LoadSettings <ConfigFile>
-LoadSettings()
-{
+LoadSettings() {
     [ $# -eq 1 ] || (echo -e "Usage: LoadSettings <ConfigFile>" && return 1)
     local ConfigFile=$1
 
@@ -1572,7 +1489,7 @@ LoadSettings()
     CacheDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings CacheDir)
     ProfilesDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings ProfilesDir)
     ExtPackageDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings ExtPackageDir)
-    RootfsPackage=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings RootfsPackage)
+    RootfsBasePackage=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings RootfsBasePackage)
 
     PreReplaceFiles=$(ConfGetValues ${ConfigFile} PreReplaces)
     PostReplaceFiles=$(ConfGetValues ${ConfigFile} PostReplaces)
@@ -1590,8 +1507,7 @@ LoadSettings()
     AccountPassword=$(ConfGetValue ${ConfigFile} Settings AccountPassword)
 }
 
-doInstallPackages()
-{
+doInstallPackages() {
     InstallPackages ${RootDir} Update || return $?
     InstallPackages ${RootDir} Upgrade || return $?
     InstallPackages ${RootDir} Install ${Packages} || return $?
@@ -1599,21 +1515,18 @@ doInstallPackages()
     return 0
 }
 
-doInstallExtraPackages()
-{
+doInstallExtraPackages() {
     InstallExtrenPackages ${RootDir} ${PackagesExtra} || return $?
     return 0
 }
 
-doRemovePackages()
-{
+doRemovePackages() {
     UnInstallPackages "${RootDir}" Purge ${PackagesUnInstall} || return $?
 
     return 0
 }
 
-Usage()
-{
+Usage() {
     local USAGE=''
     USAGE="${USAGE:+${USAGE}\n}$(basename ${Script}) <Command> <Command> ... (Command Sequence)"
     USAGE="${USAGE:+${USAGE}\n}Commands:"
@@ -1622,7 +1535,7 @@ Usage()
     USAGE="${USAGE:+${USAGE}\n}  -i|i|init        : Initialize the virtual disk file, if file does not exist, create it."
     USAGE="${USAGE:+${USAGE}\n}  -m|m|mount       : Mount virtual disk to '$(basename ${RootDir})'."
     USAGE="${USAGE:+${USAGE}\n}  -u|u|umount      : Unmount virtual disk from '$(basename ${RootDir})'."
-    USAGE="${USAGE:+${USAGE}\n}  -U|U|unpack      : Unpack the base filesystem(default is '$(basename ${RootfsPackage})') to '$(basename ${RootDir})'."
+    USAGE="${USAGE:+${USAGE}\n}  -U|U|unpack      : Unpack the base filesystem(default is '$(basename ${RootfsBasePackage})') to '$(basename ${RootDir})'."
     USAGE="${USAGE:+${USAGE}\n}  -P|P|pre-setup   : Pre-Setup settings, include replace files, gen-locales, ie...."
     USAGE="${USAGE:+${USAGE}\n}  -I|I|install     : Install packages."
     USAGE="${USAGE:+${USAGE}\n}  -E|E|instext     : Install extra packages."
@@ -1633,8 +1546,7 @@ Usage()
     echo -e ${USAGE}
 }
 
-doMain()
-{
+doMain() {
     LoadSettings ${ConfigFile} || exit $?
     CheckPrivilege || exit $?
     CheckBuildEnvironment || exit $?
@@ -1661,7 +1573,7 @@ doMain()
                 ;;
             -U|U|unpack)
                 shift
-                UnPackRootFS ${RootfsPackage} ${RootDir} || exit $?
+                UnPackRootFS ${RootfsBasePackage} ${RootDir} || exit $?
                 ;;
             -P|P|pre-setup)
                 shift
@@ -1692,7 +1604,7 @@ doMain()
                 MountVirtualDisk ${VDisk} ${RootDir} ${CacheDir}
                 RST=$?
                 if [ ${RST} -eq 99 ]; then
-                    UnPackRootFS ${RootfsPackage} ${RootDir} || exit $?
+                    UnPackRootFS ${RootfsBasePackage} ${RootDir} || exit $?
                     MountVirtualDisk ${VDisk} ${RootDir} ${CacheDir} || exit $?
                 elif [ ${RST} -ne 0 ]; then
                     exit 1
