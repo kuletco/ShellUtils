@@ -1260,7 +1260,42 @@ GenerateLocales() {
 
 # Usage: GenerateSourcesList <RootDir> <AptUrl>
 GenerateSourcesList() {
-    local CODENAME=$(chroot ${RootDir} lsb_release -s -c)
+    [ $# -eq 2 ] || (echo -e "Usage: GenerateSourcesList <RootDir> <AptUrl>" && return 1)
+
+    local RootDir=$1
+    local AptUrl=$2
+    [ -n "${RootDir}" ] || return 1
+    [ -n "${AptUrl}" ] || return 1
+
+    local SourceListFile=${RootDir}/etc/apt/sources.list
+    if [ -f ${SourceListFile} ]; then
+        printf "GENSOURCELIST: Generating ${C_HL}$(basename ${RootDir})/etc/apt/sources.list${C_CLR} ..."
+        local CodeName=$(grep partner ${RootDir}/etc/apt/sources.list | awk '/^# deb /{print $4}')
+        local SourceList=$(head -1 ${SourceListFile})
+        SourceList="${SourceList:+${SourceList}\n}"
+        SourceList="${SourceList:+${SourceList}\n}deb ${AptUrl} ${CodeName} main restricted universe multiverse"
+        SourceList="${SourceList:+${SourceList}\n}deb ${AptUrl} ${CodeName}-updates main restricted universe multiverse"
+        SourceList="${SourceList:+${SourceList}\n}deb ${AptUrl} ${CodeName}-security main restricted universe multiverse"
+        SourceList="${SourceList:+${SourceList}\n}# deb ${AptUrl} ${CodeName}-backports main restricted universe multiverse"
+        SourceList="${SourceList:+${SourceList}\n}"
+        SourceList="${SourceList:+${SourceList}\n}# deb-src ${AptUrl} ${CodeName} main restricted universe multiverse"
+        SourceList="${SourceList:+${SourceList}\n}# deb-src ${AptUrl} ${CodeName}-updates main restricted universe multiverse"
+        SourceList="${SourceList:+${SourceList}\n}# deb-src ${AptUrl} ${CodeName}-security main restricted universe multiverse"
+        SourceList="${SourceList:+${SourceList}\n}# deb-src ${AptUrl} ${CodeName}-backports main restricted universe multiverse"
+        SourceList="${SourceList:+${SourceList}\n}"
+        SourceList="${SourceList:+${SourceList}\n}# Canonical's 'partner' repository."
+        SourceList="${SourceList:+${SourceList}\n}# deb http://archive.canonical.com/ubuntu ${CodeName} partner"
+        SourceList="${SourceList:+${SourceList}\n}# deb-src http://archive.canonical.com/ubuntu ${CodeName} partner"
+        SourceList="${SourceList:+${SourceList}\n}"
+
+        echo -e "${SourceList}" > ${SourceListFile}
+
+        if [ $? -ne 0 ]; then
+            printf " [${C_FL}]\n"
+            return 1
+        fi
+        printf " [${C_OK}]\n"
+    fi
 }
 
 # Usage: SetUserPassword <RootDir> <Username> <Password>
@@ -1579,6 +1614,7 @@ doMain() {
                 shift
                 GenerateFSTAB ${VDisk} ${RootDir} || exit $?
                 ReplaceFiles ${RootDir} ${ProfilesDir} ${PreReplaceFiles} || exit $?
+                GenerateSourcesList ${RootDir} ${AptUrl} || exit $?
                 ;;
             -I|I|install)
                 shift
@@ -1611,6 +1647,7 @@ doMain() {
                 fi
                 GenerateFSTAB ${VDisk} ${RootDir} || exit $?
                 ReplaceFiles ${RootDir} ${ProfilesDir} ${PreReplaceFiles} || exit $?
+                GenerateSourcesList ${RootDir} ${AptUrl} || exit $?
                 doInstallPackages || exit $?
                 doInstallExtraPackages || exit $?
                 doRemovePackages || exit $?
