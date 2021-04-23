@@ -1043,6 +1043,15 @@ InstallPackages() {
                 printf " [${C_OK}]\n"
             done
         ;;
+        -f|--fix-broken|Fix|FIX|FixBroken|FIXBROKEN)
+        printf "PKGCHECK: ${C_YEL}Checking${C_CLR} Packages ..."
+            # if ! chroot ${RootDir} apt-get ${AptOptions} --fix-broken install >>${InsLogFile} 2>&1; then
+            if ! chroot ${RootDir} apt ${AptOptions} --fix-broken install >>${InsLogFile} 2>&1; then
+                printf " [${C_FL}]\n"
+                return 1
+            fi
+            printf " [${C_OK}]\n"
+        ;;
         *)
             echo -e "PKGINSTALL: Error: Unknown Options"
             return 1
@@ -1461,7 +1470,7 @@ SetupBootloader() {
         BootIMGOptions="${BootIMGOptions:+${BootIMGOptions} }--output ${IMGPath}"
 
         mkdir -p $(dirname ${RootDir}${IMGPath}) || return 1
-        printf "BOOTLOADER: Generate Bootloader images ${C_YEL}${RootDir}${IMGPath}${C_CLR} ..."
+        printf "BOOTLOADER: Generate Bootloader images ${C_YEL}$(basename ${RootDir})${IMGPath}${C_CLR} ..."
         if ! chroot ${RootDir} grub-mkimage ${BootIMGOptions} ${BootGrubModules} >>${BootloaderLogfile} 2>&1; then
             printf " [${C_FL}]\n"
             return 1
@@ -1487,7 +1496,7 @@ CompressVirtualDisk() {
     ZipOptions="${ZipOptions:+${ZipOptions} }-q"
 
     printf "COMPRESS: Compressing the image ${C_YEL}$(basename ${VirtualDisk})${C_CLR} --> ${C_YEL}$(basename ${ZipFile})${C_CLR}"
-    if zip ${ZipOptions} ${ZipFile} ${VirtualDisk}; then
+    if ! zip ${ZipOptions} ${ZipFile} ${VirtualDisk}; then
         printf " [${C_FL}]\n"
         return 1
     else
@@ -1543,9 +1552,9 @@ LoadSettings() {
 }
 
 doInstallPackages() {
-    InstallPackages ${RootDir} Update || return $?
-    InstallPackages ${RootDir} Upgrade || return $?
-    InstallPackages ${RootDir} Install ${Packages} || return $?
+    InstallPackages ${RootDir} Update || InstallPackages ${RootDir} FixBroken || return $?
+    InstallPackages ${RootDir} Upgrade || InstallPackages ${RootDir} FixBroken || return $?
+    InstallPackages ${RootDir} Install ${Packages} || InstallPackages ${RootDir} FixBroken || return $?
 
     return 0
 }
@@ -1565,7 +1574,7 @@ Usage() {
     local USAGE=''
     USAGE="${USAGE:+${USAGE}\n}$(basename ${Script}) <Command> <Command> ... (Command Sequence)"
     USAGE="${USAGE:+${USAGE}\n}Commands:"
-    USAGE="${USAGE:+${USAGE}\n}  -a|a|auto        : Auto process all by step."
+    USAGE="${USAGE:+${USAGE}\n}  -a|a|auto        : Auto process all by step [-a] = [-c -i -m -U -m -P -I -E -R -S -u]."
     USAGE="${USAGE:+${USAGE}\n}  -c|c|create      : Create a virtual disk file."
     USAGE="${USAGE:+${USAGE}\n}  -i|i|init        : Initialize the virtual disk file, if file does not exist, create it."
     USAGE="${USAGE:+${USAGE}\n}  -m|m|mount       : Mount virtual disk to '$(basename ${RootDir})'."
