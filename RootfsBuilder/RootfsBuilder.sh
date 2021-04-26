@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Base Vars
-WorkDir=$(pwd)
+WorkDir=$(realpath $(pwd))
 ConfigFile=${WorkDir}/settings.conf
 [ -f ${ConfigFile} ] || (echo "Error: Cannot find 'settings.conf' in the current folder." && return 1)
 
@@ -458,7 +458,7 @@ ShowVirtualDiskMountedInfo() {
         local mdev=$(echo ${line} | awk '{print $1}')
         local mdir=$(echo ${line} | awk '{print $3}')
         mdir=${mdir#*${WorkDir}/}
-        [ x"${mdev_last}" = x"${mdev}" ] || echo -e "MOUNTED: ${C_YEL}${mdev}${C_CLR} --> ${C_BLU}${mdir}${C_CLR}"
+        [ x"${mdev_last}" = x"${mdev}" ] || echo -e "MOUNTED: ${C_YEL}${mdev}${C_CLR} --> ${C_BLU}${mdir#*${WorkDir}/}${C_CLR}"
         mdev_last=${mdev}
     done
 }
@@ -495,7 +495,7 @@ GetVirtualDiskMountedRoot() {
         local PartLabel=$(GetDiskPartInfo Label ${Partition})
         if [ $? -eq 0 ] && [ x"${PartLabel}" = x"ROOT" ]; then
             IsTargetMounted ${Partition} || return 1
-            local MountDir=$(mount | /bin/grep ${Partition} | grep ${WorkDir} | awk '{print $3}')
+            local MountDir=$(mount | /bin/grep ${Partition} | /bin/grep $(realpath ${WorkDir}) | awk '{print $3}')
             [ $? -eq 0 ] && [ -n "${MountDir}" ] || return 1
             echo -e ${MountDir}
             return 0
@@ -847,7 +847,8 @@ UnLoadVirtualDisk() {
         if [ $? -eq 0 ] && [ -n "${LoopDevice}" ]; then
             printf "UNLOADING: ${C_HL}$(basename ${VirtualDisk})${C_CLR} <--> ${C_YEL}${LoopDevice}${C_CLR} "
             losetup --detach ${LoopDevice} >/dev/null 2>&1
-            if ! IsVirtualDiskLoaded ${VirtualDisk}; then
+            # if ! IsVirtualDiskLoaded ${VirtualDisk}; then
+            if [ $? -eq 0 ]; then
                 printf " [${C_OK}]\n"
                 return 0
             else
