@@ -612,6 +612,74 @@ UnMount() {
     return 0
 }
 
+# Usage: MountVDisk <VirtualDisk> <RootDir>
+MountVDisk() {
+    [ $# -eq 2 ] || (echo -e "Usage: MountVDisk <VirtualDisk> <RootDir>" && return 1)
+
+    local VirtualDisk=$1
+    local RootDir=$2
+    local StbInfoDir=${RootDir}/etc/stbinfo
+    local UefiDir=${RootDir}/boot/efi
+    local RecoveryDir=${RootDir}/boot/recovery
+    local SysConfDir=${RootDir}/etc/sysconf
+    local UserDataDir=${RootDir}/data
+
+    # Check and load virtual disk
+    if ! IsVirtualDiskLoaded ${VirtualDisk}; then
+        LoadVirtualDisk ${VirtualDisk} || return 1
+    fi
+
+    # Get partitions list
+    local Partitions=$(GetDiskPartitions ${VirtualDisk})
+    [ $? -eq 0 ] && [ -n "${Partitions}" ] || return 1
+    local LastParts=
+
+    # Find ROOT partition and mount it first
+    for dev in ${Partitions}; do
+        local PartLabel=$(GetDiskPartInfo Label $(realpath -L ${dev}))
+        [ $? -eq 0 ] && [ -n "${PartLabel}" ] || return 1
+        if [ x"${PartLabel}" == x"ROOT" ]; then
+            mkdir -p ${RootDir} || return 1
+            #Mount $(realpath -L ${dev}) ${RootDir} || return 1
+            Mount ${dev} ${RootDir} || return 1
+        else
+            LastParts=${LastParts:+${LastParts} }${dev}
+        fi
+    done
+
+    # Mount other partitions
+    for dev in ${LastParts}; do
+        local PartLabel=$(GetDiskPartInfo Label $(realpath -L ${dev}))
+        [ $? -eq 0 ] && [ -n "${PartLabel}" ] || return 1
+        case ${PartLabel} in
+            STBINFO)
+                mkdir -p ${StbInfoDir} || return 1
+                Mount ${dev} ${StbInfoDir} || return 1
+            ;;
+            ESP)
+                mkdir -p ${UefiDir} || return 1
+                Mount ${dev} ${UefiDir} || return 1
+            ;;
+            RECOVERY)
+                mkdir -p ${RecoveryDir} || return 1
+                Mount ${dev} ${RecoveryDir} || return 1
+            ;;
+            SYSCONF)
+                mkdir -p ${SysConfDir} || return 1
+                Mount ${dev} ${SysConfDir} || return 1
+            ;;
+            USERDATA)
+                mkdir -p ${UserDataDir} || return 1
+                Mount ${dev} ${UserDataDir} || return 1
+            ;;
+            *)
+            ;;
+        esac
+    done
+
+    return 0
+}
+
 # Usage: MountCache <RootDir> <CacheDir>
 MountCache() {
     [ $# -eq 2 ] || (echo -e "Usage: MountCache <RootDir> <CacheDir>" && return 1)
@@ -724,9 +792,9 @@ UnMountUserEntries() {
     return 0
 }
 
-# Usage: MountVirtualDisk <VirtualDisk> <RootDir> <CacheDir>
-MountVirtualDisk() {
-    [ $# -eq 3 ] || (echo -e "Usage: MountVirtualDisk <VirtualDisk> <RootDir> <CacheDir>" && return 1)
+# Usage: MountAll <VirtualDisk> <RootDir> <CacheDir>
+MountAll() {
+    [ $# -eq 3 ] || (echo -e "Usage: MountAll <VirtualDisk> <RootDir> <CacheDir>" && return 1)
 
     local VirtualDisk=$1
     local RootDir=$2
@@ -737,58 +805,10 @@ MountVirtualDisk() {
     local SysConfDir=${RootDir}/etc/sysconf
     local UserDataDir=${RootDir}/data
 
-    # Check and load virtual disk
-    if ! IsVirtualDiskLoaded ${VirtualDisk}; then
-        LoadVirtualDisk ${VirtualDisk} || return 1
-    fi
+    # Mount virtual disk
+    MountVDisk ${VirtualDisk} ${RootDir} || (echo "MountVDisk failed" && return 1)
 
-    # Mount partition by partition label
-    local Partitions=$(GetDiskPartitions ${VirtualDisk})
-    [ $? -eq 0 ] && [ -n "${Partitions}" ] || return 1
-    local LastParts=
-
-    # Find ROOT partition and mount it first
-    for dev in ${Partitions}; do
-        local PartLabel=$(GetDiskPartInfo Label $(realpath -L ${dev}))
-        [ $? -eq 0 ] && [ -n "${PartLabel}" ] || return 1
-        if [ x"${PartLabel}" == x"ROOT" ]; then
-            mkdir -p ${RootDir} || return 1
-            #Mount $(realpath -L ${dev}) ${RootDir} || return 1
-            Mount ${dev} ${RootDir} || return 1
-        else
-            LastParts=${LastParts:+${LastParts} }${dev}
-        fi
-    done
-
-    for dev in ${LastParts}; do
-        local PartLabel=$(GetDiskPartInfo Label $(realpath -L ${dev}))
-        [ $? -eq 0 ] && [ -n "${PartLabel}" ] || return 1
-        case ${PartLabel} in
-            STBINFO)
-                mkdir -p ${StbInfoDir} || return 1
-                Mount ${dev} ${StbInfoDir} || return 1
-            ;;
-            ESP)
-                mkdir -p ${UefiDir} || return 1
-                Mount ${dev} ${UefiDir} || return 1
-            ;;
-            RECOVERY)
-                mkdir -p ${RecoveryDir} || return 1
-                Mount ${dev} ${RecoveryDir} || return 1
-            ;;
-            SYSCONF)
-                mkdir -p ${SysConfDir} || return 1
-                Mount ${dev} ${SysConfDir} || return 1
-            ;;
-            USERDATA)
-                mkdir -p ${UserDataDir} || return 1
-                Mount ${dev} ${UserDataDir} || return 1
-            ;;
-            *)
-            ;;
-        esac
-    done
-
+    # Mount Cache dirs
     local SysLogDir=${RootDir}/var/log
     local SysLogSaveDir=${UserDataDir}/var/log
 
@@ -802,9 +822,9 @@ MountVirtualDisk() {
     return 0
 }
 
-# Usage: UnMountVirtualDisk <VirtualDisk> <RootDir>
-UnMountVirtualDisk() {
-    [ $# -eq 2 ] || (echo -e "Usage: UnMountVirtualDisk <VirtualDisk> <RootDir>" && return 1)
+# Usage: UnMountAll <VirtualDisk> <RootDir>
+UnMountAll() {
+    [ $# -eq 2 ] || (echo -e "Usage: UnMountAll <VirtualDisk> <RootDir>" && return 1)
 
     local VirtualDisk=$1
     local RootDir=$2
@@ -839,7 +859,7 @@ UnLoadVirtualDisk() {
         ShowVirtualDiskMountedInfo ${VirtualDisk} || return 1
         MountedDir=$(GetVirtualDiskMountedRoot ${VirtualDisk})
         [ $? -eq 0 ] && [ -n "${MountedDir}" ] || return 1
-        UnMountVirtualDisk ${VirtualDisk} ${MountedDir} || return 1
+        UnMountAll ${VirtualDisk} ${MountedDir} || return 1
     fi
 
     if IsVirtualDiskLoaded ${VirtualDisk}; then
@@ -877,7 +897,7 @@ InitializeVirtualDisk() {
     fi
 
     # Unmount VirtualDisk
-    UnMountVirtualDisk ${VirtualDisk} ${RootDir} || return 1
+    UnMountAll ${VirtualDisk} ${RootDir} || return 1
 
     # Load VirtualDisk
     if ! IsVirtualDiskLoaded ${VirtualDisk}; then
@@ -1575,10 +1595,11 @@ Usage() {
     local USAGE=''
     USAGE="${USAGE:+${USAGE}\n}$(basename ${Script}) <Command> <Command> ... (Command Sequence)"
     USAGE="${USAGE:+${USAGE}\n}Commands:"
-    USAGE="${USAGE:+${USAGE}\n}  -a|a|auto        : Auto process all by step [-a] = [-c -i -m -U -m -P -I -E -R -S -u]."
+    USAGE="${USAGE:+${USAGE}\n}  -a|a|auto        : Auto process all by step [-a] = [-c -i -m -U -M -P -I -E -R -S -u]."
     USAGE="${USAGE:+${USAGE}\n}  -c|c|create      : Create a virtual disk file."
     USAGE="${USAGE:+${USAGE}\n}  -i|i|init        : Initialize the virtual disk file, if file does not exist, create it."
-    USAGE="${USAGE:+${USAGE}\n}  -m|m|mount       : Mount virtual disk to '$(basename ${RootDir})'."
+    USAGE="${USAGE:+${USAGE}\n}  -m|m|mount-disk  : Mount virtual disk only to '$(basename ${RootDir})'."
+    USAGE="${USAGE:+${USAGE}\n}  -M|M|mount-all   : Mount virtual disk, cache dirs and system dirs to '$(basename ${RootDir})'."
     USAGE="${USAGE:+${USAGE}\n}  -u|u|umount      : Unmount virtual disk from '$(basename ${RootDir})'."
     USAGE="${USAGE:+${USAGE}\n}  -U|U|unpack      : Unpack the base filesystem(default is '$(basename ${RootfsBasePackage})') to '$(basename ${RootDir})'."
     USAGE="${USAGE:+${USAGE}\n}  -P|P|pre-setup   : Pre-Setup settings, include replace files, gen-locales, ie...."
@@ -1608,9 +1629,13 @@ doMain() {
                 shift
                 InitializeVirtualDisk ${VDisk} ${RootDir} || exit $?
                 ;;
-            -m|m|mount)
+            -m|m|mount-disk)
                 shift
-                MountVirtualDisk ${VDisk} ${RootDir} ${CacheDir} || exit $?
+                MountVDisk ${VDisk} ${RootDir} || exit $?
+                ;;
+            -M|M|mount-all)
+                shift
+                MountAll ${VDisk} ${RootDir} ${CacheDir} || exit $?
                 ;;
             -u|u|umount|uload)
                 shift
@@ -1622,8 +1647,8 @@ doMain() {
                 ;;
             -P|P|pre-setup)
                 shift
-                GenerateFSTAB ${VDisk} ${RootDir} || exit $?
                 ReplaceFiles ${RootDir} ${ProfilesDir} ${PreReplaceFiles} || exit $?
+                GenerateFSTAB ${VDisk} ${RootDir} || exit $?
                 GenerateSourcesList ${RootDir} ${AptUrl} || exit $?
                 ;;
             -I|I|install)
@@ -1647,16 +1672,11 @@ doMain() {
             -a|a|auto)
                 shift
                 InitializeVirtualDisk ${VDisk} ${RootDir} || exit $?
-                MountVirtualDisk ${VDisk} ${RootDir} ${CacheDir}
-                RST=$?
-                if [ ${RST} -eq 99 ]; then
-                    UnPackRootFS ${RootfsBasePackage} ${RootDir} || exit $?
-                    MountVirtualDisk ${VDisk} ${RootDir} ${CacheDir} || exit $?
-                elif [ ${RST} -ne 0 ]; then
-                    exit 1
-                fi
-                GenerateFSTAB ${VDisk} ${RootDir} || exit $?
+                MountVDisk ${VDisk} ${RootDir} || exit $?
+                UnPackRootFS ${RootfsBasePackage} ${RootDir} || exit $?
+                MountAll ${VDisk} ${RootDir} ${CacheDir} || exit $?
                 ReplaceFiles ${RootDir} ${ProfilesDir} ${PreReplaceFiles} || exit $?
+                GenerateFSTAB ${VDisk} ${RootDir} || exit $?
                 GenerateSourcesList ${RootDir} ${AptUrl} || exit $?
                 doInstallPackages || exit $?
                 doInstallExtraPackages || exit $?
