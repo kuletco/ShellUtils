@@ -5,6 +5,7 @@ WorkDir=$(realpath $(pwd))
 ConfigFile=${WorkDir}/settings.conf
 [ -f ${ConfigFile} ] || (echo "Error: Cannot find 'settings.conf' in the current folder." && return 1)
 
+SquashfsFile=
 VDisk=
 RootDir=
 CacheDir=
@@ -19,6 +20,7 @@ Packages=
 PackagesExtra=
 PackagesUnInstall=
 
+TimeZone=
 AptUrl=
 Encoding=
 Language=
@@ -52,7 +54,7 @@ CheckPrivilege() {
 }
 
 CheckBuildEnvironment() {
-    Utils="blkid lsblk losetup parted mkfs.ext4 mkfs.fat"
+    Utils="blkid lsblk losetup parted mkfs.ext4 mkfs.fat mksquashfs"
 
     for Util in ${Utils}; do
         if ! which ${Util} >/dev/null 2>&1; then
@@ -158,7 +160,7 @@ LoadVirtualDisk() {
             printf " [${C_OK}]\n"
             echo -e " ${C_HL}$(basename ${VirtualDisk})${C_CLR} --> ${C_YEL}${Device}${C_CLR}"
         else
-            printf " [${C_FL}]\n"
+            printf " [${C_FL}]\n" && return 1
         fi
     fi
 }
@@ -380,8 +382,7 @@ FormatPartitions() {
         fi
         printf "FORMAT: Partition[${C_YEL}${Partition}${C_CLR}] --> [${C_BLU}${fstype}${C_CLR}] ..."
         if ! mkfs.${fstype} ${opts} ${Partition} > /dev/null 2>&1; then
-            printf " [${C_FL}]\n"
-            return 1
+            printf " [${C_FL}]\n" && return 1
         else
             printf " [${C_OK}]\n"
         fi
@@ -547,8 +548,7 @@ Mount() {
 
     printf "MOUNT: ${C_GEN}${Options:+[${Options}] }${C_YEL}${Source#*${WorkDir}/}${C_CLR} --> ${C_BLU}${DstDir#*${WorkDir}/}${C_CLR}"
     if ! eval ${Prefix} mount ${Options} ${Source} ${DstDir} >/dev/null 2>&1; then
-        printf " [${C_FL}]\n"
-        return 1
+        printf " [${C_FL}]\n" && return 1
     fi
     printf " [${C_OK}]\n"
 
@@ -586,8 +586,7 @@ UnMount() {
             printf "UMOUNT: [${C_GEN}Recursive${C_CLR}] ${C_YEL}${Directory#*${WorkDir}/}${C_CLR}"
             if ! eval ${Prefix} umount -R ${Directory} >/dev/null 2>&1; then
                 if ! eval ${Prefix} umount -Rl ${Directory} >/dev/null 2>&1; then
-                    printf " [${C_FL}]\n"
-                    return 1
+                    printf " [${C_FL}]\n" && return 1
                 fi
             fi
             printf " [${C_OK}]\n"
@@ -600,8 +599,7 @@ UnMount() {
                 printf "UNMOUNT: ${C_YEL}${dir}${C_CLR}"
                 if ! eval ${Prefix} umount ${dir}; then
                     if ! eval ${Prefix} umount -l ${dir}; then
-                        printf " [${C_FL}]\n"
-                        return 1
+                        printf " [${C_FL}]\n" && return 1
                     fi
                 fi
                 printf " [${C_OK}]\n"
@@ -869,11 +867,9 @@ UnLoadVirtualDisk() {
             losetup --detach ${LoopDevice} >/dev/null 2>&1
             # if ! IsVirtualDiskLoaded ${VirtualDisk}; then
             if [ $? -eq 0 ]; then
-                printf " [${C_OK}]\n"
-                return 0
+                printf " [${C_OK}]\n" && return 0
             else
-                printf " [${C_FL}]\n"
-                return 1
+                printf " [${C_FL}]\n" && return 1
             fi
         fi
     fi
@@ -919,11 +915,9 @@ UnPackRootFS() {
 
     printf "UNPACK: ${C_HL}$(basename ${Package})${C_CLR} --> ${C_BLU}$(basename ${RootDir})${C_CLR} ..."
     if ! tar --exclude=dev/* -xf ${Package} -C ${RootDir} >>/dev/null 2>&1; then
-        printf " [${C_FL}]\n"
-        return 1
+        printf " [${C_FL}]\n" && return 1
     else
         printf " [${C_OK}]\n"
-        return 0
     fi
 }
 
@@ -979,9 +973,9 @@ ReplaceFiles() {
                 cp -a "${RootDir}/${File}" "${BackupDir}" >/dev/null 2>&1
             fi
             # Copy File
-            printf "REPLACE: ${C_HL}${File}${C_CLR} ..."
             FileName=$(basename ${File})
             if [ -f "${ModifiedDir}/${FileName}" ]; then
+                printf "REPLACE: ${C_HL}${File}${C_CLR} ..."
                 mkdir -p "$(dirname ${RootDir}/${File})" || return $?
                 if ! cp -a "${ModifiedDir}/${FileName}" "${RootDir}/${File}" >/dev/null 2>&1; then
                     printf " [${C_FL}]\n"
@@ -1031,47 +1025,47 @@ InstallPackages() {
     AptOptions="${AptOptions:+${AptOptions} }--quiet"
     AptOptions="${AptOptions:+${AptOptions} }--yes"
     AptOptions="${AptOptions:+${AptOptions} }--allow-change-held-packages"
-    #AptOptions="${AptOptions:+${AptOptions} }--force-yes"
-    #AptOptions="${AptOptions:+${AptOptions} }--no-install-recommends"
+    AptOptions="${AptOptions:+${AptOptions} }--force-yes"
+    AptOptions="${AptOptions:+${AptOptions} }--no-install-recommends"
 
     case ${Options} in
         -u|--update|Update|UPDATE)
             printf "PKGINSTALL: ${C_YEL}Updating${C_CLR} Packages List ..."
             # if ! chroot ${RootDir} apt-get ${AptOptions} update >>${InsLogFile} 2>&1; then
             if ! chroot ${RootDir} apt ${AptOptions} update >>${InsLogFile} 2>&1; then
-                printf " [${C_FL}]\n"
-                return 1
+                printf " [${C_FL}]\n" && return 1
+            else
+                printf " [${C_OK}]\n"
             fi
-            printf " [${C_OK}]\n"
         ;;
         -U|--upgrade|Upgrade|UPGRADE)
             printf "PKGINSTALL: ${C_YEL}Upgrading${C_CLR} Packages ..."
             # if ! chroot ${RootDir} apt-get ${AptOptions} upgrade >>${InsLogFile} 2>&1; then
             if ! chroot ${RootDir} apt ${AptOptions} upgrade >>${InsLogFile} 2>&1; then
-                printf " [${C_FL}]\n"
-                return 1
+                printf " [${C_FL}]\n" && return 1
+            else
+                printf " [${C_OK}]\n"
             fi
-            printf " [${C_OK}]\n"
         ;;
         -i|--install|Install|INSTALL)
             for Package in ${Packages}; do
                 printf "PKGINSTALL: ${C_YEL}Installing${C_CLR} ${C_HL}${Package}${C_CLR} ..."
                 # if ! chroot ${RootDir} apt-get ${AptOptions} install ${Package} >>${InsLogFile} 2>&1; then
                 if ! DEBIAN_FRONTEND=noninteractive chroot ${RootDir} apt ${AptOptions} install ${Package} >>${InsLogFile} 2>&1; then
-                    printf " [${C_FL}]\n"
-                    return 1
+                    printf " [${C_FL}]\n" && return 1
+                else
+                    printf " [${C_OK}]\n"
                 fi
-                printf " [${C_OK}]\n"
             done
         ;;
         -f|--fix-broken|Fix|FIX|FixBroken|FIXBROKEN)
-        printf "PKGCHECK: ${C_YEL}Checking${C_CLR} Packages ..."
+            printf "PKGCHECK: ${C_YEL}Checking${C_CLR} Packages ..."
             # if ! chroot ${RootDir} apt-get ${AptOptions} --fix-broken install >>${InsLogFile} 2>&1; then
             if ! chroot ${RootDir} apt ${AptOptions} --fix-broken install >>${InsLogFile} 2>&1; then
-                printf " [${C_FL}]\n"
-                return 1
+                printf " [${C_FL}]\n" && return 1
+            else
+                printf " [${C_OK}]\n"
             fi
-            printf " [${C_OK}]\n"
         ;;
         *)
             echo -e "PKGINSTALL: Error: Unknown Options"
@@ -1106,15 +1100,14 @@ InstallExtrenPackages() {
         if [ $? -ne 0 ]; then
             DEBIAN_FRONTEND=noninteractive chroot ${RootDir} apt install -f >>${InsLogFile} 2>&1
             if [ $? -ne 0 ]; then
-                printf " [${C_FL}]\n"
-                return 1
+                printf " [${C_FL}]\n" && return 1
             else
                 printf " [${C_OK}]\n"
             fi
         else
             printf " [${C_OK}]\n"
         fi
-	rm ${RootDir}/tmp/${Package}
+        rm ${RootDir}/tmp/${Package}
     done
 }
 
@@ -1143,20 +1136,20 @@ UnInstallPackages() {
             for Package in ${Packages}; do
                 printf "PKGUNINSTALL: ${C_YEL}Removing${C_CLR} ${C_HL}${Package}${C_CLR} ..."
                 if ! DEBIAN_FRONTEND=noninteractive chroot "${RootDir}" apt ${AptOptions} remove ${Package} >>"${LogFile}" 2>&1; then
-                    printf " [${C_FL}]\n"
-                    return 1
+                    printf " [${C_FL}]\n" && return 1
+                else
+                    printf " [${C_OK}]\n"
                 fi
-                printf " [${C_OK}]\n"
             done
             ;;
         -p|--purge|purge|Purge|PURGE)
             for Package in ${Packages}; do
                 printf "PKGUNINSTALL: ${C_YEL}Purging${C_CLR} ${C_HL}${Package}${C_CLR} ..."
                 if ! DEBIAN_FRONTEND=noninteractive chroot "${RootDir}" apt ${AptOptions} purge ${Package} >>"${LogFile}" 2>&1; then
-                    printf " [${C_FL}]\n"
-                    return 1
+                    printf " [${C_FL}]\n" && return 1
+                else
+                    printf " [${C_OK}]\n"
                 fi
-                printf " [${C_OK}]\n"
             done
             ;;
         *)
@@ -1169,9 +1162,9 @@ UnInstallPackages() {
     return 0
 }
 
-# Usage: GenerateFSTAB <VirtualDisk> <RootDir>
-GenerateFSTAB() {
-    [ $# -eq 2 ] || (echo -e "Usage: GenerateFSTAB <VirtualDisk> <RootDir>" && return 1)
+# Usage: UpdateFSTAB <VirtualDisk> <RootDir>
+UpdateFSTAB() {
+    [ $# -eq 2 ] || (echo -e "Usage: UpdateFSTAB <VirtualDisk> <RootDir>" && return 1)
 
     local VirtualDisk=$1
     local RootDir=$2
@@ -1226,7 +1219,7 @@ GenerateFSTAB() {
         esac
     done
 
-    printf "GENFSTAB: Generating ${C_HL}$(basename ${RootDir})/etc/fstab${C_CLR} ..."
+    printf "UPDATE-FSTAB: Updating ${C_HL}$(basename ${RootDir})/etc/fstab${C_CLR} ..."
     mkdir -p ${RootDir}/etc
     local FSTAB=''
     FSTAB="${FSTAB:+${FSTAB}\n}# System Entry"
@@ -1246,10 +1239,10 @@ GenerateFSTAB() {
     echo -e "${FSTAB}" > ${RootDir}/etc/fstab
 
     if [ $? -ne 0 ]; then
-        printf " [${C_FL}]\n"
-        return 1
+        printf " [${C_FL}]\n" && return 1
+    else
+        printf " [${C_OK}]\n"
     fi
-    printf " [${C_OK}]\n"
 
     [ -n "${UefiUUID}" ] && echo -e "  ${C_YEL}ESP${C_CLR}      UUID = ${C_BLU}${UefiUUID}${C_CLR}"
     [ -n "${StbiUUID}" ] && echo -e "  ${C_YEL}STBINFO${C_CLR}  UUID = ${C_BLU}${StbiUUID}${C_CLR}"
@@ -1261,9 +1254,38 @@ GenerateFSTAB() {
     return 0
 }
 
-# Usage: GenerateLocales <RootDir> <Locales>
-GenerateLocales() {
-    [ $# -gt 1 ] || (echo -e "Usage: GenerateLocales <RootDir> <Locales>" && return 1)
+# UpdateTimeZone <RootDir> <TimeZone>
+UpdateTimeZone() {
+    [ $# -eq 2 ] || (echo -e "Usage: UpdateTimeZone <RootDir> <TimeZone>" && return 1)
+
+    local RootDir=$1
+    local TimeZone=$2
+    [ -n "${RootDir}" ] || return 1
+    [ -n "${TimeZone}" ] || return 1
+
+    IsTargetMounted ${RootDir} || (echo -e "${C_BLU}${RootDIr}${C_CLR} not mounted"; return 1)
+
+    local tzConf=${RootDir}/etc/timezone
+    local ltLink=${RootDir}/etc/localtime
+
+    printf "UPDATE-TIMEZONE: Updating ${C_HL}$(basename ${RootDir})/etc/timezone${C_CLR} ..."
+    echo "${TimeZone}" > ${tzConf}
+    chown root:root ${tzConf}
+    rm -f ${ltLink}
+    ln -s /usr/share/zoneinfo/${TimeZone} ${ltLink}
+
+    if [ $? -ne 0 ]; then
+        printf " [${C_FL}]\n" && return 1
+    else
+        printf " [${C_OK}]\n"
+    fi
+
+    return 0
+}
+
+# Usage: UpdateLocales <RootDir> <Locales>
+UpdateLocales() {
+    [ $# -gt 1 ] || (echo -e "Usage: UpdateLocales <RootDir> <Locales>" && return 1)
 
     local RootDir=$1
     shift
@@ -1273,33 +1295,38 @@ GenerateLocales() {
     [ -n "${Locales}" ] || return 1
 
     IsTargetMounted ${RootDir} || (echo -e "${C_BLU}${RootDIr}${C_CLR} not mounted"; return 1)
+
     if [ -x ${RootDir}/usr/sbin/locale-gen ]; then
-        for locale in ${Locales}
-        do
-            printf "GENLOCALES: Generating ${C_HL}${locale}${C_CLR} ..."
+        for locale in ${Locales}; do
+            printf "UPDATE-LOCALE: Updating ${C_HL}${locale}${C_CLR} ..."
             if ! chroot ${RootDir} locale-gen ${locale} >/dev/null 2>&1; then
-                printf " [${C_FL}]\n"
+                printf " [${C_FL}]\n" && return 1
             else
                 printf " [${C_OK}]\n"
             fi
         done
+    else
+        echo "Error: Missing locale-gen command, please install locales package first!"
+        return 1
     fi
 
     return 0
 }
 
-# Usage: GenerateSourcesList <RootDir> <AptUrl>
-GenerateSourcesList() {
-    [ $# -eq 2 ] || (echo -e "Usage: GenerateSourcesList <RootDir> <AptUrl>" && return 1)
+# Usage: UpdateSourcesList <RootDir> <AptUrl>
+UpdateSourcesList() {
+    [ $# -eq 2 ] || (echo -e "Usage: UpdateSourcesList <RootDir> <AptUrl>" && return 1)
 
     local RootDir=$1
     local AptUrl=$2
     [ -n "${RootDir}" ] || return 1
     [ -n "${AptUrl}" ] || return 1
 
+    IsTargetMounted ${RootDir} || (echo -e "${C_BLU}${RootDIr}${C_CLR} not mounted"; return 1)
+
     local SourceListFile=${RootDir}/etc/apt/sources.list
     if [ -f ${SourceListFile} ]; then
-        printf "GENSOURCELIST: Generating ${C_HL}$(basename ${RootDir})/etc/apt/sources.list${C_CLR} ..."
+        printf "UPDATE-SOURCESLIST: Updating ${C_HL}$(basename ${RootDir})/etc/apt/sources.list${C_CLR} ..."
         local CodeName=$(grep partner ${RootDir}/etc/apt/sources.list | awk '/^# deb /{print $4}')
         local SourceList=$(head -1 ${SourceListFile})
         SourceList="${SourceList:+${SourceList}\n}"
@@ -1321,10 +1348,10 @@ GenerateSourcesList() {
         echo -e "${SourceList}" > ${SourceListFile}
 
         if [ $? -ne 0 ]; then
-            printf " [${C_FL}]\n"
-            return 1
+            printf " [${C_FL}]\n" && return 1
+        else
+            printf " [${C_OK}]\n"
         fi
-        printf " [${C_OK}]\n"
     fi
 }
 
@@ -1345,10 +1372,10 @@ SetUserPassword() {
     if ! /bin/grep -q ${Username} ${RootDir}/etc/passwd; then
         printf "SETPASSWD: Adding User: ${C_HL}${Username}${C_CLR} ..."
         if ! chroot ${RootDir} useradd --user-group --create-home --skel /etc/skel --shell /bin/bash ${Username}; then
-            printf printf " [${C_FL}]\n"
-            return 1
+            printf printf " [${C_FL}]\n" && return 1
+        else
+            printf " [${C_OK}]\n"
         fi
-        printf " [${C_OK}]\n"
     fi
 
     # Init Root User with base profile
@@ -1362,18 +1389,12 @@ SetUserPassword() {
     local SCRIPT=''
     SCRIPT="${SCRIPT:+${SCRIPT}\n}#!/bin/bash"
     SCRIPT="${SCRIPT:+${SCRIPT}\n}echo ${Username}:${Password} | chpasswd"
-    echo -e ${SCRIPT} > ${RootDir}/${ChPwdScript}
 
-    if [ $? -ne 0 ]; then
-        printf " [${C_FL}]\n"
-        return 1
+    if echo -e ${SCRIPT} > ${RootDir}/${ChPwdScript} && chroot ${RootDir} bash ${ChPwdScript} && rm -f ${RootDir}/${ChPwdScript}; then
+        printf " [${C_OK}]\n"
+    else
+        printf " [${C_FL}]\n" && return 1
     fi
-
-    if ! chroot ${RootDir} bash ${ChPwdScript}; then
-        printf " [${C_FL}]\n"
-    fi
-    rm -f ${RootDir}/${ChPwdScript}
-    printf " [${C_OK}]\n"
 
     return 0
 }
@@ -1444,7 +1465,7 @@ SetupBootloader() {
         Rst=$((${Rst} + $?))
 
         if [ ${Rst} -ne 0 ]; then
-            printf " [${C_FL}]\n"
+            printf " [${C_FL}]\n" && return ${Rst}
         else
             printf " [${C_OK}]\n"
         fi
@@ -1460,16 +1481,14 @@ SetupBootloader() {
 
     printf "BOOTLOADER: Installing Bootloader to ${C_YEL}${BootDevice}${C_CLR} ..."
     if ! chroot ${RootDir} grub-install ${BootOptions} ${BootDevice} >>${BootloaderLogfile} 2>&1; then
-        printf " [${C_FL}]\n"
-        return 1
+        printf " [${C_FL}]\n" && return 1
     else
         printf " [${C_OK}]\n"
     fi
 
     printf "BOOTLOADER: Generate Bootloader Configuration ..."
     if ! chroot ${RootDir} update-grub >>${BootloaderLogfile} 2>&1; then
-        printf " [${C_FL}]\n"
-        return 1
+        printf " [${C_FL}]\n" && return 1
     else
         printf " [${C_OK}]\n"
     fi
@@ -1493,8 +1512,7 @@ SetupBootloader() {
         mkdir -p $(dirname ${RootDir}${IMGPath}) || return 1
         printf "BOOTLOADER: Generate Bootloader images ${C_YEL}$(basename ${RootDir})${IMGPath}${C_CLR} ..."
         if ! chroot ${RootDir} grub-mkimage ${BootIMGOptions} ${BootGrubModules} >>${BootloaderLogfile} 2>&1; then
-            printf " [${C_FL}]\n"
-            return 1
+            printf " [${C_FL}]\n" && return 1
         else
             printf " [${C_OK}]\n"
         fi
@@ -1502,6 +1520,33 @@ SetupBootloader() {
 
     [ -f ${BootloaderLogfile} ] && rm -f ${BootloaderLogfile}
     return 0
+}
+
+# Usage: MakeSquashfs <Squashfs File> <RootDir>
+MakeSquashfs() {
+    if [ $# -ne 2 ]; then
+        echo -e "Usage: MakeSquashfs <Squashfs File> <RootDir>"
+        return 1
+    fi
+
+    local Squashfs=$1
+    local RootDir=$2
+
+    if [ ! -d "${RootDir}" ]; then
+        echo "Cannot find Rootfs dir."
+        return 1
+    fi
+
+    [ -f "${Squashfs}" ] || rm -f "${Squashfs}"
+
+    printf "MKSQUASH: ${C_HL}${RootDir##*${WorkDir}/}${C_CLR} --> ${C_BLU}${Squashfs##*${WorkDir}/}${C_CLR} ..."
+    if ! mksquashfs "${RootDir}" "${Squashfs}" -comp xz -processors 4 >>/dev/null 2>&1; then
+        printf " [${C_FL}]\n"
+        return 1
+    else
+        printf " [${C_OK}]\n"
+        return 0
+    fi
 }
 
 # Usage: CompressVirtualDisk <VirtualDisk>
@@ -1518,8 +1563,7 @@ CompressVirtualDisk() {
 
     printf "COMPRESS: Compressing the image ${C_YEL}$(basename ${VirtualDisk})${C_CLR} --> ${C_YEL}$(basename ${ZipFile})${C_CLR}"
     if ! zip ${ZipOptions} ${ZipFile} ${VirtualDisk}; then
-        printf " [${C_FL}]\n"
-        return 1
+        printf " [${C_FL}]\n" && return 1
     else
         printf " [${C_OK}]\n"
     fi
@@ -1549,6 +1593,7 @@ LoadSettings() {
     [ $# -eq 1 ] || (echo -e "Usage: LoadSettings <ConfigFile>" && return 1)
     local ConfigFile=$1
 
+    SquashfsFile=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings SquashfsFile)
     VDisk=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings VDisk)
     RootDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings RootDir)
     CacheDir=${WorkDir}/$(ConfGetValue ${ConfigFile} Settings CacheDir)
@@ -1563,6 +1608,7 @@ LoadSettings() {
     PackagesExtra=$(GetConfPackages ${ConfigFile} PackagesExtra)
     PackagesUnInstall=$(GetConfPackages ${ConfigFile} PackagesUnInstall)
 
+    TimeZone=$(ConfGetValue ${ConfigFile} Settings TimeZone)
     AptUrl=$(ConfGetValue ${ConfigFile} Settings AptUrl)
     Encoding=$(ConfGetValue ${ConfigFile} Settings Encoding)
     Language=$(ConfGetValue ${ConfigFile} Settings Language)
@@ -1595,20 +1641,21 @@ Usage() {
     local USAGE=''
     USAGE="${USAGE:+${USAGE}\n}$(basename ${Script}) <Command> <Command> ... (Command Sequence)"
     USAGE="${USAGE:+${USAGE}\n}Commands:"
-    USAGE="${USAGE:+${USAGE}\n}  -a|a|auto        : Auto process all by step [-a] = [-c -i -m -U -M -P -I -E -R -S -u]."
+    USAGE="${USAGE:+${USAGE}\n}  -a|a|auto        : Auto process all by step [-a] = [-c -i -m -U -M -p -I -E -R -P -u]."
     USAGE="${USAGE:+${USAGE}\n}  -c|c|create      : Create a virtual disk file."
     USAGE="${USAGE:+${USAGE}\n}  -i|i|init        : Initialize the virtual disk file, if file does not exist, create it."
-    USAGE="${USAGE:+${USAGE}\n}  -m|m|mount-disk  : Mount virtual disk only to '$(basename ${RootDir})'."
-    USAGE="${USAGE:+${USAGE}\n}  -M|M|mount-all   : Mount virtual disk, cache dirs and system dirs to '$(basename ${RootDir})'."
-    USAGE="${USAGE:+${USAGE}\n}  -u|u|umount      : Unmount virtual disk from '$(basename ${RootDir})'."
-    USAGE="${USAGE:+${USAGE}\n}  -U|U|unpack      : Unpack the base filesystem(default is '$(basename ${RootfsBasePackage})') to '$(basename ${RootDir})'."
-    USAGE="${USAGE:+${USAGE}\n}  -P|P|pre-setup   : Pre-Setup settings, include replace files, gen-locales, ie...."
+    USAGE="${USAGE:+${USAGE}\n}  -m|m|mount-disk  : Mount virtual disk only to \"$(basename ${RootDir})\"."
+    USAGE="${USAGE:+${USAGE}\n}  -M|M|mount-all   : Mount virtual disk, cache dirs and system dirs to \"$(basename ${RootDir})\"."
+    USAGE="${USAGE:+${USAGE}\n}  -u|u|umount      : Unmount virtual disk from \"$(basename ${RootDir})\"."
+    USAGE="${USAGE:+${USAGE}\n}  -U|U|unpack      : Unpack the base filesystem(default is \"$(basename ${RootfsBasePackage})\") to \"$(basename ${RootDir})\"."
+    USAGE="${USAGE:+${USAGE}\n}  -p|p|pre-setup   : Pre-Setup settings, include replace files, gen-locales, ie...."
+    USAGE="${USAGE:+${USAGE}\n}  -P|P|post-setup  : Post-Setup settings, include setup bootloader, user password, ie...."
     USAGE="${USAGE:+${USAGE}\n}  -I|I|install     : Install packages."
     USAGE="${USAGE:+${USAGE}\n}  -E|E|instext     : Install extra packages."
     USAGE="${USAGE:+${USAGE}\n}  -R|R|remove      : Remove exist packages."
-    USAGE="${USAGE:+${USAGE}\n}  -S|S|post-setup  : Post-Setup settings, include setup bootloader, user password, ie...."
+    USAGE="${USAGE:+${USAGE}\n}  -s|s|make-squash : Compress rootfs to squash file: \"$(basename ${SquashfsFile}))\"."
+    USAGE="${USAGE:+${USAGE}\n}  -z|z|zip         : Compress image to a zip file \"${VDisk}.zip\"."
     USAGE="${USAGE:+${USAGE}\n}  -s|show-settings : Show current settings."
-    USAGE="${USAGE:+${USAGE}\n}  -z|z|zip         : Compress image to a zip file."
     echo -e ${USAGE}
 }
 
@@ -1645,11 +1692,12 @@ doMain() {
                 shift
                 UnPackRootFS ${RootfsBasePackage} ${RootDir} || exit $?
                 ;;
-            -P|P|pre-setup)
+            -p|p|pre-setup)
                 shift
                 ReplaceFiles ${RootDir} ${ProfilesDir} ${PreReplaceFiles} || exit $?
-                GenerateFSTAB ${VDisk} ${RootDir} || exit $?
-                GenerateSourcesList ${RootDir} ${AptUrl} || exit $?
+                UpdateFSTAB ${VDisk} ${RootDir} || exit $?
+                UpdateTimeZone ${RootDir} ${TimeZone} || exit $?
+                UpdateSourcesList ${RootDir} ${AptUrl} || exit $?
                 ;;
             -I|I|install)
                 shift
@@ -1663,7 +1711,7 @@ doMain() {
                 shift
                 doRemovePackages || exit $?
                 ;;
-            -S|S|post-setup)
+            -P|P|post-setup)
                 shift
                 ReplaceFiles ${RootDir} ${ProfilesDir} ${PostReplaceFiles} || exit $?
                 SetUserPassword ${RootDir} ${AccountUsername} ${AccountPassword} || exit $?
@@ -1676,8 +1724,9 @@ doMain() {
                 UnPackRootFS ${RootfsBasePackage} ${RootDir} || exit $?
                 MountAll ${VDisk} ${RootDir} ${CacheDir} || exit $?
                 ReplaceFiles ${RootDir} ${ProfilesDir} ${PreReplaceFiles} || exit $?
-                GenerateFSTAB ${VDisk} ${RootDir} || exit $?
-                GenerateSourcesList ${RootDir} ${AptUrl} || exit $?
+                UpdateFSTAB ${VDisk} ${RootDir} || exit $?
+                UpdateTimeZone ${RootDir} ${TimeZone} || exit $?
+                UpdateSourcesList ${RootDir} ${AptUrl} || exit $?
                 doInstallPackages || exit $?
                 doInstallExtraPackages || exit $?
                 doRemovePackages || exit $?
@@ -1685,6 +1734,10 @@ doMain() {
                 SetUserPassword ${RootDir} ${AccountUsername} ${AccountPassword} || exit $?
                 SetupBootloader ${VDisk} ${RootDir} ${BootloaderID} || exit $?
                 UnLoadVirtualDisk ${VDisk} || exit $?
+                ;;
+            -s|s|make-squash)
+                shift
+                MakeSquashfs ${SquashfsFile} ${RootDir} || exit $?
                 ;;
             -z|z|zip)
                 shift
