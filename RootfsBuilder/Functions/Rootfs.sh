@@ -15,15 +15,14 @@ elif [ -f ${FunctionsDir}/Mount.sh ]; then
     source ${FunctionsDir}/Mount.sh
 fi
 
-if [-f ${ScriptDir}/Configure.sh ]; then
+if [ -f ${ScriptDir}/Configure.sh ]; then
     source ${ScriptDir}/Configure.sh
 elif [ -f ${FunctionsDir}/Configure.sh ]; then
     source ${FunctionsDir}/Configure.sh
 fi
 
 # Usage: UnPackRootFS <Package> <RootDir>
-UnPackRootFS()
-{
+UnPackRootFS() {
     if [ $# -ne 2 ]; then
         echo -e "Usage: UnPackRootFS <Package> <RootDir>"
         return 1
@@ -50,8 +49,7 @@ UnPackRootFS()
 }
 
 # Usage: MakeSquashfs <Squashfs File> <RootDir>
-MakeSquashfs()
-{
+MakeSquashfs() {
     if [ $# -ne 2 ]; then
         echo -e "Usage: MakeSquashfs <Squashfs File> <RootDir>"
         return 1
@@ -78,8 +76,7 @@ MakeSquashfs()
 }
 
 # Usage: ReplaceFiles <RootDir> <ProfilesDir> <Files...>
-ReplaceFiles()
-{
+ReplaceFiles() {
     if [ $# -lt 2 ]; then
         echo -e "Usage: ReplaceFiles <RootDir> <ProfilesDir> <Files...>"
         return 1
@@ -125,8 +122,7 @@ ReplaceFiles()
 }
 
 # Usage: CopyFiles <RootDir> <ProfilesDir> <Files...>
-CopyFiles()
-{
+CopyFiles() {
     if [ $# -lt 2 ]; then
         echo -e "Usage: CopyFiles <RootDir> <ProfilesDir> <Files...>"
         return 1
@@ -171,8 +167,7 @@ CopyFiles()
 }
 
 # Usage: InstallPreSettings <RootDir> <PreSettingsDir>
-InstallPreSettings()
-{
+InstallPreSettings() {
     if [ $# -ne 2 ]; then
         echo -e "Usage: InstallPreSettings <RootDir> <PreSettingsDir>"
         return 1
@@ -202,11 +197,10 @@ InstallPreSettings()
     fi
 }
 
-# Usage: GenerateFSTAB <VirtualDisk> <RootDir>
-GenerateFSTAB()
-{
+# Usage: UpdateFSTAB <RootDir>
+UpdateFSTAB() {
     if [ $# -ne 1 ]; then
-        echo -e "Usage: UnMountChroot <RootDir>"
+        echo -e "Usage: UpdateFSTAB <RootDir>"
         return 1
     fi
 
@@ -227,9 +221,77 @@ GenerateFSTAB()
     return 0
 }
 
+# UpdateTimeZone <RootDir> <TimeZone>
+UpdateTimeZone() {
+    [ $# -eq 2 ] || (echo -e "Usage: UpdateTimeZone <RootDir> <TimeZone>" && return 1)
+
+    local RootDir=$1
+    local TimeZone=$2
+    [ -n "${RootDir}" ] || return 1
+    [ -n "${TimeZone}" ] || return 1
+
+    IsTargetMounted ${RootDir} || (echo -e "${C_BLU}${RootDIr}${C_CLR} not mounted"; return 1)
+
+    local tzConf=${RootDir}/etc/timezone
+    local ltLink=${RootDir}/etc/localtime
+
+    printf "UPDATE-SOURCESLIST: Updating ${C_HL}$(basename ${RootDir})/etc/apt/sources.list${C_CLR} ..."
+    echo "${TimeZone}" > ${tzConf}
+    chown root:root ${tzConf}
+    rm -f ${ltLink}
+    ln -s /usr/share/zoneinfo/${TimeZone} ${ltLink}
+
+    if [ $? -ne 0 ]; then
+        printf " [${C_FL}]\n" && return 1
+    else
+        printf " [${C_OK}]\n"
+    fi
+
+    return 0
+}
+
+# Usage: GenerateSourcesList <RootDir> <AptUrl>
+GenerateSourcesList() {
+    [ $# -eq 2 ] || (echo -e "Usage: GenerateSourcesList <RootDir> <AptUrl>" && return 1)
+
+    local RootDir=$1
+    local AptUrl=$2
+    [ -n "${RootDir}" ] || return 1
+    [ -n "${AptUrl}" ] || return 1
+
+    local SourceListFile=${RootDir}/etc/apt/sources.list
+    if [ -f ${SourceListFile} ]; then
+        printf "GENSOURCELIST: Generating ${C_HL}$(basename ${RootDir})/etc/apt/sources.list${C_CLR} ..."
+        local CodeName=$(grep partner ${RootDir}/etc/apt/sources.list | awk '/^# deb /{print $4}')
+        local SourceList=$(head -1 ${SourceListFile})
+        SourceList="${SourceList:+${SourceList}\n}"
+        SourceList="${SourceList:+${SourceList}\n}deb ${AptUrl} ${CodeName} main restricted universe multiverse"
+        SourceList="${SourceList:+${SourceList}\n}deb ${AptUrl} ${CodeName}-updates main restricted universe multiverse"
+        SourceList="${SourceList:+${SourceList}\n}deb ${AptUrl} ${CodeName}-security main restricted universe multiverse"
+        SourceList="${SourceList:+${SourceList}\n}# deb ${AptUrl} ${CodeName}-backports main restricted universe multiverse"
+        SourceList="${SourceList:+${SourceList}\n}"
+        SourceList="${SourceList:+${SourceList}\n}# deb-src ${AptUrl} ${CodeName} main restricted universe multiverse"
+        SourceList="${SourceList:+${SourceList}\n}# deb-src ${AptUrl} ${CodeName}-updates main restricted universe multiverse"
+        SourceList="${SourceList:+${SourceList}\n}# deb-src ${AptUrl} ${CodeName}-security main restricted universe multiverse"
+        SourceList="${SourceList:+${SourceList}\n}# deb-src ${AptUrl} ${CodeName}-backports main restricted universe multiverse"
+        SourceList="${SourceList:+${SourceList}\n}"
+        SourceList="${SourceList:+${SourceList}\n}# Canonical's 'partner' repository."
+        SourceList="${SourceList:+${SourceList}\n}# deb http://archive.canonical.com/ubuntu ${CodeName} partner"
+        SourceList="${SourceList:+${SourceList}\n}# deb-src http://archive.canonical.com/ubuntu ${CodeName} partner"
+        SourceList="${SourceList:+${SourceList}\n}"
+
+        echo -e "${SourceList}" > ${SourceListFile}
+
+        if [ $? -ne 0 ]; then
+            printf " [${C_FL}]\n"
+            return 1
+        fi
+        printf " [${C_OK}]\n"
+    fi
+}
+
 # Usage: GenerateLocales <RootDir> <Locales>
-GenerateLocales()
-{
+GenerateLocales() {
     if [ $# -lt 2 ]; then
         echo -e "Usage: GenerateLocales <RootDir> <Locales>"
         return 1
@@ -264,8 +326,7 @@ GenerateLocales()
 }
 
 # Usage: SetUserPassword <RootDir> <Username> <Password>
-SetUserPassword()
-{
+SetUserPassword() {
     if [ $# -ne 3 ]; then
         echo -e "Usage: SetUserPassword <RootDir> <Username> <Password>"
         return 1
@@ -321,8 +382,7 @@ SetUserPassword()
 }
 
 # Usage: ClearRootFS <RootDir>
-ClearRootFS()
-{
+ClearRootFS() {
     if [ $# -ne 1 ]; then
         echo -e "Usage: ClearRootFS <RootDir>"
         return 1
